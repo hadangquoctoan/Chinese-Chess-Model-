@@ -1,0 +1,55 @@
+# Configuration optimized for Google Colab Pro
+
+# Model configuration - Medium size for balance
+model:
+  size: medium
+  num_residual_blocks: 10
+  num_channels: 256
+  policy_channels: 32
+  value_channels: 4
+
+# Training configuration - Optimized for Colab GPU
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 512  # Use 256 if running out of memory on P100
+  use_amp: true  # Critical for Colab - 2-3x speedup
+
+# Self-play configuration
+self_play:
+  num_games_per_iteration: 500  # Reduce to 300 if too slow
+  mcts_simulations: 400  # Balance between quality and speed
+  temperature: 1.0
+  temperature_threshold: 15
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  parallel_workers: 1  # Colab has 1 GPU
+
+# Replay buffer
+replay_buffer:
+  max_size: 500000
+
+# Training loop - Optimized for 16-20 hours
+training_loop:
+  num_iterations: 50  # Each iteration ~20-30 minutes
+  samples_per_iteration: 50000
+  evaluation_games: 100  # Reduce to 50 for faster evaluation
+  win_rate_threshold: 0.55
+  checkpoint_every: 5  # Save every 5 iterations (~2 hours)
+
+# Colab specific settings
+colab:
+  auto_checkpoint_interval: 7200  # Save every 2 hours (seconds)
+  early_stopping_patience: 10  # Stop if no improvement after 10 iterations
+  
+# Paths (will be created in Colab)
+paths:
+  checkpoint_dir: /content/checkpoints
+  best_model_path: /content/best_model.pt
+  log_dir: /content/logs/tensorboard
+  
+# Memory optimization
+optimization:
+  gradient_accumulation_steps: 1
+  max_batch_size: 512
+  num_workers: 2

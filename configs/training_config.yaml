@@ -1,0 +1,40 @@
+# Model configuration
+model:
+  size: medium  # small, medium, large
+  num_residual_blocks: 10
+  num_channels: 256
+  policy_channels: 32
+  value_channels: 4
+
+# Training configuration
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 512
+  use_amp: true  # Mixed precision training
+
+# Self-play configuration
+self_play:
+  num_games_per_iteration: 500
+  mcts_simulations: 400
+  temperature: 1.0
+  temperature_threshold: 15  # After this many moves, use near-greedy
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+
+# Replay buffer
+replay_buffer:
+  max_size: 500000  # Maximum number of positions to keep
+
+# Training loop
+training_loop:
+  num_iterations: 50
+  samples_per_iteration: 50000
+  evaluation_games: 100
+  win_rate_threshold: 0.55  # New model needs >55% to replace best
+
+# Paths
+paths:
+  checkpoint_dir: models/checkpoints
+  best_model_path: models/best_model.pt
+  log_dir: logs/tensorboard
