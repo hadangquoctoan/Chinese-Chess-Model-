@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Offline Xiangqi</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">OFFLINE GAME</p>
+          <h1>Xiangqi</h1>
+        </div>
+        <div class="topbar-actions">
+          <p id="turn-label" class="turn-label" aria-live="polite">Loading game</p>
+          <button id="new-game-button" class="command-button" type="button">New game</button>
+        </div>
+      </header>
+
+      <section class="game-layout" aria-label="Xiangqi game">
+        <div class="board-region">
+          <div id="board" class="board" aria-label="Xiangqi board"></div>
+        </div>
+
+        <aside class="game-panel" aria-label="Game controls">
+          <section class="game-status">
+            <p class="panel-label">STATUS</p>
+            <p id="status-message" class="status-message" aria-live="polite"></p>
+          </section>
+
+          <dl class="game-metrics">
+            <div>
+              <dt>Moves</dt>
+              <dd id="move-count">0</dd>
+            </div>
+            <div>
+              <dt>Last move</dt>
+              <dd id="last-move">-</dd>
+            </div>
+          </dl>
+
+          <button id="undo-button" class="icon-button" type="button" title="Undo move" aria-label="Undo move">
+            <span aria-hidden="true">&#8630;</span>
+          </button>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
