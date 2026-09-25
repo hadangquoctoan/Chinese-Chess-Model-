@@ -4,6 +4,7 @@ Encode game state thành tensor cho neural network
 import numpy as np
 
 from ..board import Board
+from .game_result import NO_CAPTURE_DRAW_PLY_LIMIT
 from .move_history import MoveHistory
 from .position_tracker import PositionTracker, REPETITION_DRAW_COUNT
 
@@ -31,7 +32,7 @@ class StateEncoder:
             np.ndarray shape (19, 10, 9)
             - Channels 0-15: Board features (từ Board.to_numpy)
             - Channel 16: Current player turn
-            - Channel 17: Normalized move count
+            - Channel 17: Normalized moves since the most recent capture
             - Channel 18: Position repetition count
         """
         # Lấy board representation từ góc nhìn người chơi hiện tại
@@ -40,8 +41,8 @@ class StateEncoder:
         # Channel 16: Current player (1.0 cho đỏ, 0.0 cho đen)
         board_array[16, :, :] = StateEncoder._encode_turn(is_red_turn)
         
-        # Channel 17: Normalized move count
-        board_array[17, :, :] = StateEncoder._encode_move_count(move_history)
+        # Channel 17: Progress toward the no-capture draw threshold
+        board_array[17, :, :] = StateEncoder._encode_no_capture_count(move_history)
         
         # Channel 18: Position repetition count
         board_array[18, :, :] = StateEncoder._encode_repetition(position_tracker)
@@ -62,18 +63,18 @@ class StateEncoder:
         return 1.0 if is_red_turn else 0.0
     
     @staticmethod
-    def _encode_move_count(move_history: MoveHistory) -> float:
+    def _encode_no_capture_count(move_history: MoveHistory) -> float:
         """
-        Encode số nước đi đã thực hiện (normalized)
+        Encode số nước đi kể từ lần ăn quân gần nhất (normalized)
         
         Args:
             move_history: Lịch sử nước đi
             
         Returns:
-            Giá trị từ 0.0 đến 1.0 (cap tại 100 nước đi)
+            Giá trị từ 0.0 đến 1.0, đạt 1.0 tại ngưỡng hòa
         """
-        move_count = move_history.get_move_count()
-        return min(move_count / 100.0, 1.0)
+        no_capture_count = move_history.count_moves_since_capture()
+        return min(no_capture_count / NO_CAPTURE_DRAW_PLY_LIMIT, 1.0)
     
     @staticmethod
     def _encode_repetition(position_tracker: PositionTracker) -> float:
