@@ -1,7 +1,7 @@
 """
 Trạng thái ván cờ - quản lý toàn bộ state của game
 """
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 
 import numpy as np
 
@@ -218,7 +218,7 @@ class GameState:
         return self._move_history.get_move_count()
     
     @property
-    def move_history(self) -> List[Tuple[int, int, int, int, Optional]]:
+    def move_history(self) -> List[Tuple[int, int, int, int, Optional[Any]]]:
         """
         Lấy lịch sử nước đi dạng list of tuples (backward compatibility)
         
