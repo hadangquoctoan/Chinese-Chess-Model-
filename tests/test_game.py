@@ -4,6 +4,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.game.game_state import GameState
+from src.game.board import Board
+from src.game.gamestate.game_result import NO_CAPTURE_DRAW_PLY_LIMIT
+from src.game.gamestate.move_history import MoveHistory
+from src.game.gamestate.position_tracker import PositionTracker
+from src.game.gamestate.state_encoder import StateEncoder
 from src.game.pieces import PieceType, create_piece
 from src.game.rules import Rules
 from scripts.play_cli import parse_move
@@ -134,6 +139,43 @@ def test_replay_buffer_rejects_invalid_batches():
     print("[PASS] Replay buffer validation test passed.")
 
 
+def test_channel_17_tracks_moves_since_capture():
+    """Channel 17 must follow and reset the no-capture draw counter."""
+    history = MoveHistory()
+    tracker = PositionTracker()
+    board = Board()
+
+    for _ in range(25):
+        history.add_move(0, 0, 0, 1, captured_piece=None)
+
+    tensor = StateEncoder.to_tensor(board, True, history, tracker)
+    assert (tensor[17] == 0.25).all()
+
+    threshold_history = MoveHistory()
+    for _ in range(NO_CAPTURE_DRAW_PLY_LIMIT + 1):
+        threshold_history.add_move(0, 0, 0, 1, captured_piece=None)
+    tensor = StateEncoder.to_tensor(board, True, threshold_history, tracker)
+    assert (tensor[17] == 1.0).all()
+
+    captured_piece = create_piece(PieceType.SOLDIER, is_red=False)
+    history.add_move(0, 0, 0, 1, captured_piece=captured_piece)
+    tensor = StateEncoder.to_tensor(board, True, history, tracker)
+    assert (tensor[17] == 0.0).all()
+
+    history.add_move(0, 0, 0, 1, captured_piece=None)
+    history.add_move(0, 0, 0, 1, captured_piece=None)
+    tensor = StateEncoder.to_tensor(board, True, history, tracker)
+    assert (tensor[17] == 0.02).all()
+
+    history.pop_last_move()
+    history.pop_last_move()
+    history.pop_last_move()
+    tensor = StateEncoder.to_tensor(board, True, history, tracker)
+    assert (tensor[17] == 0.25).all()
+
+    print("[PASS] Channel 17 no-capture counter test passed.")
+
+
 if __name__ == '__main__':
     print("Running game logic tests...\n")
     
@@ -145,5 +187,6 @@ if __name__ == '__main__':
     test_action_decoding_returns_a_legal_move()
     test_move_parser_rejects_malformed_input()
     test_replay_buffer_rejects_invalid_batches()
+    test_channel_17_tracks_moves_since_capture()
     
     print("\n[SUCCESS] All tests passed!")
