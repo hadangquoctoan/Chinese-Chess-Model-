@@ -241,7 +241,7 @@ class Board:
             - Channels 7-13: Quân địch (opponent pieces)
             - Channel 14: Vùng cung (palace)
             - Channel 15: Sông (river)
-            - Channel 16-18: Sẽ được StateEncoder set (turn, move count, repetition)
+            - Channel 16-18: StateEncoder sets turn, no-capture count, repetition
         """
         board_array = np.zeros((19, 10, 9), dtype=np.float32)
 
@@ -256,7 +256,7 @@ class Board:
 
         # Channels 16-18 are populated by StateEncoder:
         # - Channel 16: Current player turn
-        # - Channel 17: Move count normalized
+        # - Channel 17: Moves since the most recent capture, normalized
         # - Channel 18: Repetition count
 
         return board_array
