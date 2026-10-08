@@ -20,6 +20,9 @@ STATIC_FILES = {
     "styles.css": "text/css; charset=utf-8",
     "app.js": "application/javascript; charset=utf-8",
     "assets/xiangqi-board.svg": "image/svg+xml",
+    "receptive_field.html": "text/html; charset=utf-8",
+    "receptive_field.css": "text/css; charset=utf-8",
+    "receptive_field.js": "application/javascript; charset=utf-8",
 }
 
 sys.path.insert(0, str(REPOSITORY_ROOT))

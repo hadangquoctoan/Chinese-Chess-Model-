@@ -15,19 +15,35 @@
         </div>
         <div class="topbar-actions">
           <p id="turn-label" class="turn-label" aria-live="polite">Loading game</p>
+          <button id="theme-toggle" class="icon-button theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+            <span class="theme-icon theme-icon-light" aria-hidden="true">&#9728;</span>
+            <span class="theme-icon theme-icon-dark" aria-hidden="true">&#9790;</span>
+          </button>
           <button id="new-game-button" class="command-button" type="button">New game</button>
         </div>
       </header>
 
       <section class="game-layout" aria-label="Xiangqi game">
         <div class="board-region">
-          <div id="board" class="board" aria-label="Xiangqi board"></div>
+          <div class="board-frame">
+            <div class="board-axis board-axis-top" aria-hidden="true"></div>
+            <div class="board-axis board-axis-left" aria-hidden="true"></div>
+            <div id="board" class="board" aria-label="Xiangqi board"></div>
+            <div class="board-axis board-axis-right" aria-hidden="true"></div>
+            <div class="board-axis board-axis-bottom" aria-hidden="true"></div>
+          </div>
         </div>
 
         <aside class="game-panel" aria-label="Game controls">
           <section class="game-status">
             <p class="panel-label">STATUS</p>
             <p id="status-message" class="status-message" aria-live="polite"></p>
+          </section>
+
+          <section class="coord-panel">
+            <p class="panel-label">SELECTED COORDINATE</p>
+            <p id="selected-coord" class="coord-value">-</p>
+            <p class="coord-hint">Rows 0-9, cols 0-8 (red at top).</p>
           </section>
 
           <dl class="game-metrics">
@@ -44,10 +60,24 @@
           <button id="undo-button" class="icon-button" type="button" title="Undo move" aria-label="Undo move">
             <span aria-hidden="true">&#8630;</span>
           </button>
+          <p class="coord-hint">Tip: click a piece to see its legal destinations.</p>
         </aside>
       </section>
     </main>
 
     <script src="/app.js"></script>
+    <script>
+      // Apply persisted theme before paint to avoid a flash of the wrong palette.
+      (function () {
+        try {
+          var stored = localStorage.getItem("xiangqi-theme");
+          var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var theme = stored || (prefersDark ? "dark" : "light");
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (err) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
   </body>
 </html>

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Trực quan hóa trường cảm thụ (Receptive Field) của ChineseChessNet trên bàn cờ Tướng 10x9.">
+  <title>Trường cảm thụ · ChineseChessNet Explorer</title>
+  <link rel="stylesheet" href="/receptive_field.css">
+  <script src="/receptive_field.js" defer></script>
+</head>
+<body>
+  <!-- TOPBAR: Tiêu đề, Stepper tầng và các nút điều khiển chính -->
+  <header class="app-topbar">
+    <div class="topbar-left">
+      <a class="nav-back-link" href="/" title="Về bàn cờ chơi game">
+        <span class="back-arrow" aria-hidden="true">←</span>
+        <span class="back-label">Bàn cờ</span>
+      </a>
+      <div class="topbar-title-group">
+        <span class="app-kicker">ChineseChessNet · Receptive Field</span>
+        <h1 class="app-title">Mô Phỏng Trường Cảm Thụ</h1>
+      </div>
+    </div>
+
+    <!-- Stepper 6 tầng nằm ngay trên topbar -->
+    <nav class="stepper-nav" aria-label="Chọn tầng mạng nơ-ron">
+      <div id="stage-rail" class="stepper-rail"></div>
+    </nav>
+
+    <div class="topbar-actions">
+      <button id="previous-button" class="btn-icon" type="button" title="Tầng trước (Phím ←)" aria-label="Tầng trước">←</button>
+      <button id="play-button" class="btn-play" type="button">
+        <span id="play-icon" aria-hidden="true">▶</span>
+        <span id="play-label">Trình diễn</span>
+      </button>
+      <button id="next-button" class="btn-icon" type="button" title="Tầng kế tiếp (Phím →)" aria-label="Tầng kế tiếp">→</button>
+      <button id="fullscreen-button" class="btn-ghost" type="button" title="Bật/Tắt toàn màn hình">Toàn màn hình</button>
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE: Bố cục 2 cột cố định 100vh -->
+  <main class="app-workspace">
+
+    <!-- CỘT TRÁI: BÀN CỜ TƯỚNG (HOÀN TOÀN LOCKED - KHÔNG CUỘN) -->
+    <section class="locked-board-column" aria-label="Khu vực bàn cờ cố định">
+      <!-- Thanh chọn nhanh vị trí mẫu -->
+      <div class="board-controls-bar">
+        <div class="preset-pills" aria-label="Vị trí mẫu">
+          <span class="preset-label">Vị trí:</span>
+          <button type="button" class="pill-btn" data-position="4,4">Tâm (4,4)</button>
+          <button type="button" class="pill-btn" data-position="4,0">Cạnh (4,0)</button>
+          <button type="button" class="pill-btn" data-position="0,0">Góc (0,0)</button>
+          <button type="button" class="pill-btn" data-position="0,1">Mã đỏ (0,1)</button>
+          <button type="button" class="pill-btn" data-position="2,1">Pháo đỏ (2,1)</button>
+        </div>
+        <span class="axis-hint">Hàng 0 trên · Cột 0 trái</span>
+      </div>
+
+      <!-- Khung chứa bàn cờ 10x9 tự co giãn vừa vặn theo chiều dọc -->
+      <div class="board-stage-wrapper">
+        <div class="board-frame-layout">
+          <div class="axis-corner" aria-hidden="true"></div>
+          <div id="column-axis" class="axis-columns" aria-hidden="true"></div>
+          <div id="row-axis" class="axis-rows" aria-hidden="true"></div>
+
+          <div class="board-viewport">
+            <div id="board-grid" class="board-grid" aria-label="Bàn cờ tensor 10 hàng 9 cột"></div>
+            <div id="cell-tooltip" class="cell-tooltip" role="tooltip" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chú giải & Trạng thái vị trí ngay dưới bàn cờ -->
+      <div class="board-footer-bar">
+        <div class="board-legend">
+          <span class="legend-item"><i class="legend-box field-box" aria-hidden="true"></i> Trong vùng RF</span>
+          <span class="legend-item"><i class="legend-box target-box" aria-hidden="true"></i> Nơ-ron tâm đang xét</span>
+          <span class="legend-item"><i class="legend-box outside-box" aria-hidden="true"></i> Ngoài RF</span>
+        </div>
+        <div id="position-message" class="board-status-badge">Tâm (4, 4)</div>
+      </div>
+    </section>
+
+    <!-- CỘT PHẢI: BẢNG ĐIỀU KHIỂN & BỘ SLIDE THUYẾT TRÌNH (TABS) -->
+    <section class="presentation-column" aria-label="Bảng thông số và giải thích">
+
+      <!-- THẺ HEADLINE: Thông tin tầng hiện tại & Chỉ số RF nổi bật -->
+      <div class="layer-hero-card">
+        <div class="hero-card-header">
+          <div class="layer-tags">
+            <span id="layer-number" class="badge-stage">Tầng 0</span>
+            <code id="layer-code" class="code-tag">input tensor</code>
+          </div>
+          <div class="formula-chip">
+            <span class="formula-caption">Quy tắc:</span>
+            <code id="rf-formula">RF = 1 + 2×0 = 1</code>
+          </div>
+        </div>
+
+        <div class="hero-rf-display">
+          <div class="rf-main-stat">
+            <span class="rf-stat-label">Trường cảm thụ lý thuyết</span>
+            <div class="rf-number-wrap">
+              <strong id="rf-value" class="rf-giant-number">1 × 1</strong>
+              <span id="rf-radius" class="rf-radius-tag">Bán kính 0 ô</span>
+            </div>
+          </div>
+
+          <div class="metrics-row">
+            <div class="metric-tile">
+              <span class="metric-label">Ô thật trên bàn</span>
+              <strong id="real-cell-count" class="metric-val">1 / 90</strong>
+            </div>
+            <div class="metric-tile">
+              <span class="metric-label">Ô ngoài bàn (Padding 0)</span>
+              <strong id="padding-cell-count" class="metric-val">0</strong>
+            </div>
+            <div class="metric-tile">
+              <span class="metric-label">Quân cờ quan sát</span>
+              <strong id="piece-count" class="metric-val">0 / 32</strong>
+            </div>
+          </div>
+        </div>
+
+        <p id="layer-summary" class="layer-summary-text"></p>
+      </div>
+
+      <!-- TABS ĐIỀU HƯỚNG NỘI DUNG THUYẾT TRÌNH -->
+      <div class="deck-tabs-nav" role="tablist" aria-label="Chủ đề thuyết trình">
+        <button id="tab-btn-detail" class="deck-tab active" type="button" role="tab" aria-selected="true" data-tab="detail">
+          <span>🎯 Ý nghĩa cờ tướng</span>
+        </button>
+        <button id="tab-btn-bridge" class="deck-tab" type="button" role="tab" aria-selected="false" data-tab="bridge">
+          <span>🌉 Cơ chế bắc cầu</span>
+        </button>
+        <button id="tab-btn-residual" class="deck-tab" type="button" role="tab" aria-selected="false" data-tab="residual">
+          <span>🔀 Nhánh Residual</span>
+        </button>
+        <button id="tab-btn-guide" class="deck-tab" type="button" role="tab" aria-selected="false" data-tab="guide">
+          <span>📋 Lưu ý thuyết trình</span>
+        </button>
+      </div>
+
+      <!-- NỘI DUNG CÁC TAB -->
+      <div class="deck-tabs-content">
+
+        <!-- TAB 1: CHI TIẾT TẦNG & Ý NGHĨA CỜ TƯỚNG -->
+        <div id="tab-panel-detail" class="tab-panel active" role="tabpanel" aria-labelledby="tab-btn-detail">
+          <div class="panel-card">
+            <h3 id="layer-title" class="panel-heading">Bàn cờ gốc</h3>
+            <p id="layer-insight" class="panel-insight-text"></p>
+            <div class="chess-tactical-note" id="chess-tactical-note">
+              <!-- Cập nhật tự động qua JS theo từng tầng -->
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: CƠ CHẾ BẮC CẦU (BRIDGE) -->
+        <div id="tab-panel-bridge" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-bridge" hidden>
+          <div class="panel-card">
+            <h3 class="panel-heading">Tại sao mỗi tầng Conv 3×3 lại mở rộng thêm 2 ô?</h3>
+            <p class="panel-subtext">Tầng sau không đọc lại bàn cờ gốc. Nó quét 3×3 điểm trên feature map của tầng trước — nơi mỗi điểm đã tích lũy sẵn một vùng quan sát.</p>
+
+            <div class="bridge-visual-comparison">
+              <div class="visual-footprint-box">
+                <span class="footprint-title">Tầng trước</span>
+                <div id="previous-footprint" class="footprint-grid" aria-hidden="true"></div>
+                <strong id="previous-rf-label" class="footprint-label">1 × 1</strong>
+              </div>
+
+              <div class="visual-bridge-op">
+                <div class="mini-kernel" aria-hidden="true">
+                  <span></span><span></span><span></span>
+                  <span></span><span class="center-dot"></span><span></span>
+                  <span></span><span></span><span></span>
+                </div>
+                <span class="op-tag">+ Conv 3×3</span>
+                <span class="op-math" id="bridge-equation">1 + 2 = 3</span>
+              </div>
+
+              <div class="visual-footprint-box highlight-box">
+                <span class="footprint-title">Tầng này</span>
+                <div id="current-footprint" class="footprint-grid" aria-hidden="true"></div>
+                <strong id="current-rf-label" class="footprint-label">3 × 3</strong>
+              </div>
+            </div>
+
+            <div class="bridge-note-card">
+              <strong id="bridge-heading">Từ 1×1 thành 3×3</strong>
+              <p id="bridge-description"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: NHÁNH RESIDUAL (RESBLOCK) -->
+        <div id="tab-panel-residual" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-residual" hidden>
+          <div class="panel-card">
+            <div class="residual-header-row">
+              <h3 class="panel-heading">ResidualBlock: Hai luồng thông tin song song</h3>
+              <div class="res-block-switcher" role="tablist" aria-label="Chọn Block">
+                <button class="res-switch-btn active" type="button" data-block="1">Block 1</button>
+                <button class="res-switch-btn" type="button" data-block="2">Block 2</button>
+              </div>
+            </div>
+            <p class="panel-subtext">RF 7×7 hay 11×11 là của <strong>nhánh tích chập dài nhất</strong>. Đường tắt identity vẫn bảo lưu trường cảm thụ cục bộ ban đầu.</p>
+
+            <div class="residual-pipeline-flow">
+              <div class="pipe-node pipe-input">
+                <span class="pipe-label">Đầu vào x</span>
+                <strong id="residual-input-rf" class="pipe-val">RF 3×3</strong>
+              </div>
+
+              <div class="pipe-branches">
+                <div class="branch-row main-conv-row">
+                  <div class="branch-flow-text">
+                    <span class="branch-step">Conv1 (3×3)</span>
+                    <span class="arrow">→</span>
+                    <span class="branch-step">BN+ReLU</span>
+                    <span class="arrow">→</span>
+                    <span class="branch-step">Conv2 (3×3)</span>
+                  </div>
+                  <strong id="main-branch-rf" class="branch-rf-tag">RF 7×7</strong>
+                </div>
+
+                <div class="branch-row skip-identity-row">
+                  <div class="branch-flow-text">
+                    <span class="branch-step">Identity skip connection (x)</span>
+                  </div>
+                  <strong id="skip-branch-rf" class="branch-rf-tag">RF 3×3</strong>
+                </div>
+              </div>
+
+              <div class="pipe-merge" title="Phép cộng phần tử: out + residual">+</div>
+
+              <div class="pipe-node pipe-output">
+                <span class="pipe-label">Đầu ra block</span>
+                <strong id="residual-output-rf" class="pipe-val">RF tối đa 7×7</strong>
+              </div>
+            </div>
+
+            <p id="residual-explanation" class="residual-expl-text"></p>
+          </div>
+        </div>
+
+        <!-- TAB 4: LƯU Ý THUYẾT TRÌNH -->
+        <div id="tab-panel-guide" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-guide" hidden>
+          <div class="panel-card">
+            <h3 class="panel-heading">3 Điều then chốt giúp thuyết trình chính xác</h3>
+            <div class="presentation-guide-grid">
+              <div class="guide-box">
+                <span class="guide-badge">A</span>
+                <h4>RF là biên độ lý thuyết tối đa</h4>
+                <p>Một ô nằm trong RF chỉ mang ý nghĩa là nơ-ron <em>có khả năng toán học</em> nhìn thấy nó. Không phải ô nào cũng có trọng số lớn như nhau.</p>
+              </div>
+              <div class="guide-box">
+                <span class="guide-badge">B</span>
+                <h4>Ảnh hưởng của vị trí biên (Padding)</h4>
+                <p>Khi chọn ô ở góc hoặc cạnh, một phần RF 11×11 rơi ra ngoài bàn cờ và nhận giá trị 0. Chỉ khi ở vùng tâm mới chạm trọn vẹn 90 ô.</p>
+              </div>
+              <div class="guide-box">
+                <span class="guide-badge">C</span>
+                <h4>BatchNorm & ReLU không đổi kích thước</h4>
+                <p>Chỉ có tầng Conv 3×3 (stride 1) làm tăng RF. Các hàm kích hoạt phi tuyến giữ nguyên vị trí hình học.</p>
+              </div>
+            </div>
+
+            <!-- Câu chốt 1-click copy -->
+            <div class="takeaway-banner">
+              <div class="takeaway-text">
+                <span class="takeaway-tag">Câu chốt thuyết trình:</span>
+                <blockquote>“Sau Input Conv và hai ResidualBlock, nhánh tích chập dài nhất có trường cảm thụ lý thuyết 11×11. Với nơ-ron ở vùng tâm, footprint này đã bao trùm toàn bộ 90 ô của bàn cờ 10×9.”</blockquote>
+              </div>
+              <button id="copy-takeaway" class="btn-copy-takeaway" type="button">Sao chép câu chốt</button>
+            </div>
+
+            <!-- Bảng dữ liệu 6 bước -->
+            <div class="table-compact-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Bước</th>
+                    <th>Vị trí mã nguồn</th>
+                    <th>Số tầng Conv</th>
+                    <th>RF tối đa</th>
+                    <th>Bán kính</th>
+                  </tr>
+                </thead>
+                <tbody id="rf-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <div id="toast" class="toast-popup" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

@@ -24,7 +24,7 @@ class ModelConfig:
     board_height: int = 10
     board_width: int = 9
     action_space: int = 1800
-    2
+
     # Training
     learning_rate: float = 0.001
     weight_decay: float = 1e-4

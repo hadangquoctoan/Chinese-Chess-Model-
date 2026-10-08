@@ -1,10 +1,32 @@
 const boardElement = document.querySelector("#board");
+const boardFrame = document.querySelector(".board-frame");
 const turnLabel = document.querySelector("#turn-label");
 const statusMessage = document.querySelector("#status-message");
 const moveCount = document.querySelector("#move-count");
 const lastMove = document.querySelector("#last-move");
 const undoButton = document.querySelector("#undo-button");
 const newGameButton = document.querySelector("#new-game-button");
+const themeToggle = document.querySelector("#theme-toggle");
+const selectedCoord = document.querySelector("#selected-coord");
+
+const THEME_STORAGE_KEY = "xiangqi-theme";
+const BOARD_ROWS = 10;
+const BOARD_COLS = 9;
+
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") === "dark"
+    ? "dark"
+    : "light";
+}
+
+function setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (err) {
+    // localStorage may be unavailable in private mode; the UI still works.
+  }
+}
 
 let gameState = null;
 let selectedOrigin = null;
@@ -13,14 +35,52 @@ function positionKey(row, col) {
   return `${row}:${col}`;
 }
 
+function formatCoord(row, col) {
+  return `(${row},${col})`;
+}
+
 function moveNotation(move) {
   if (!move) {
     return "-";
   }
 
   const [fromRow, fromCol, toRow, toCol] = move;
-  const columns = "abcdefghi";
-  return `${columns[fromCol]}${fromRow}-${columns[toCol]}${toRow}`;
+  return `${formatCoord(fromRow, fromCol)} -> ${formatCoord(toRow, toCol)}`;
+}
+
+function buildAxisLabels() {
+  const colTop = boardFrame.querySelector(".board-axis-top");
+  const colBottom = boardFrame.querySelector(".board-axis-bottom");
+  const rowLeft = boardFrame.querySelector(".board-axis-left");
+  const rowRight = boardFrame.querySelector(".board-axis-right");
+  if (!colTop || !colBottom || !rowLeft || !rowRight) {
+    return;
+  }
+
+  colTop.replaceChildren();
+  colBottom.replaceChildren();
+  rowLeft.replaceChildren();
+  rowRight.replaceChildren();
+
+  // Column labels (0-8). Top and bottom match so users can read either side.
+  for (let col = 0; col < BOARD_COLS; col += 1) {
+    for (const target of [colTop, colBottom]) {
+      const label = document.createElement("span");
+      label.className = "axis-label axis-col";
+      label.textContent = String(col);
+      target.append(label);
+    }
+  }
+
+  // Row labels (0-9). Red sits at row 0, black at row 9.
+  for (let row = 0; row < BOARD_ROWS; row += 1) {
+    for (const target of [rowLeft, rowRight]) {
+      const label = document.createElement("span");
+      label.className = "axis-label axis-row";
+      label.textContent = String(row);
+      target.append(label);
+    }
+  }
 }
 
 function selectedMoves() {
@@ -56,6 +116,9 @@ function updatePanel() {
     : text;
   moveCount.textContent = String(gameState.moveCount);
   lastMove.textContent = moveNotation(gameState.lastMove);
+  selectedCoord.textContent = selectedOrigin
+    ? formatCoord(selectedOrigin.row, selectedOrigin.col)
+    : "-";
   undoButton.disabled = gameState.moveCount === 0;
 }
 
@@ -85,6 +148,7 @@ function renderBoard() {
       cell.className = "board-cell";
       cell.dataset.row = String(displayRow);
       cell.dataset.col = String(col);
+      cell.title = `r=${displayRow}, c=${col}`;
       cell.setAttribute("aria-label", `${String.fromCharCode(97 + col)}${displayRow}`);
 
       if (selectedOrigin && key === positionKey(selectedOrigin.row, selectedOrigin.col)) {
@@ -102,6 +166,12 @@ function renderBoard() {
         token.textContent = piece.symbol;
         cell.append(token);
       }
+
+      const coordTag = document.createElement("span");
+      coordTag.className = "cell-coord";
+      coordTag.textContent = `${displayRow},${col}`;
+      coordTag.setAttribute("aria-hidden", "true");
+      cell.append(coordTag);
 
       cell.disabled = gameState.isTerminal || (
         !legalOrigins.has(key) && !destinations.has(key)
@@ -190,7 +260,30 @@ newGameButton.addEventListener("click", async () => {
   renderBoard();
 });
 
+themeToggle.addEventListener("click", () => {
+  setTheme(currentTheme() === "dark" ? "light" : "dark");
+});
+
+if (window.matchMedia) {
+  window
+    .matchMedia("(prefers-color-scheme: dark)")
+    .addEventListener("change", (event) => {
+      let stored = null;
+      try {
+        stored = localStorage.getItem(THEME_STORAGE_KEY);
+      } catch (err) {
+        stored = null;
+      }
+      if (stored) {
+        return;
+      }
+      setTheme(event.matches ? "dark" : "light");
+    });
+}
+
 loadState().catch((error) => {
   turnLabel.textContent = "Unable to load game";
   statusMessage.textContent = error.message;
 });
+
+buildAxisLabels();
