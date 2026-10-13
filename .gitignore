@@ -80,7 +80,10 @@ plans/
 plans
 AGENTS.md
 agents.md
+CLAUDE.md
+claude.md
 docs/
+requirements.txt
 
 # Temporary files
 *.tmp
