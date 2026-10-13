@@ -1,6 +1,7 @@
 """
 Quản lý bàn cờ tướng
 """
+from copy import copy
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -96,8 +97,9 @@ class Board:
         new_board = Board.__new__(Board)
         new_board.rows = self.rows
         new_board.cols = self.cols
-        new_board.board = [[self.board[r][c] for c in range(self.cols)]
-                          for r in range(self.rows)]
+        # Pieces carry scalar/enum metadata only; copy each object without
+        # recursive traversal of every attribute during legal-move simulation.
+        new_board.board = [[copy(piece) for piece in row] for row in self.board]
         return new_board
 
     def find_general(self, is_red: bool) -> Optional[Tuple[int, int]]:
@@ -255,7 +257,7 @@ class Board:
         board_array[15] = self._encode_river_layer()
 
         # Channels 16-18 are populated by StateEncoder:
-        # - Channel 16: Current player turn
+        # - Channel 16: Signed color and total-ply progress
         # - Channel 17: Moves since the most recent capture, normalized
         # - Channel 18: Repetition count
 
