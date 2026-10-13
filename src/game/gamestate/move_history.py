@@ -1,6 +1,7 @@
 """
 Quản lý lịch sử nước đi và chức năng undo
 """
+from copy import deepcopy
 from typing import List, Tuple, Optional
 
 from ..pieces import Piece
@@ -22,6 +23,9 @@ class MoveRecord:
         self.to_row = to_row
         self.to_col = to_col
         self.captured_piece = captured_piece
+        self.mover_is_red: Optional[bool] = None
+        self.gave_check = False
+        self.chased_piece_ids: frozenset[int] = frozenset()
     
     def to_tuple(self) -> Tuple[int, int, int, int, Optional[Piece]]:
         """Convert to tuple format for backward compatibility"""
@@ -97,7 +101,7 @@ class MoveHistory:
     def copy(self) -> 'MoveHistory':
         """Tạo bản sao của lịch sử"""
         new_history = MoveHistory()
-        new_history._moves = self._moves.copy()
+        new_history._moves = deepcopy(self._moves)
         return new_history
     
     def clear(self) -> None:
