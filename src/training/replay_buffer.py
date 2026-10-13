@@ -15,7 +15,7 @@ class ReplayBuffer:
         Args:
             max_size: Số lượng position tối đa trong buffer
         """
-        if max_size <= 0:
+        if type(max_size) is not int or max_size <= 0:
             raise ValueError("max_size must be positive")
 
         self.max_size = max_size
@@ -30,7 +30,17 @@ class ReplayBuffer:
             policy: Target policy shape (1800,)
             value: Target value (-1, 0, 1)
         """
-        self.buffer.append((state, policy, value))
+        state = np.asarray(state, dtype=np.float32)
+        policy = np.asarray(policy, dtype=np.float32)
+        if state.shape != (19, 10, 9) or not np.isfinite(state).all():
+            raise ValueError('state must be finite with shape (19, 10, 9)')
+        if policy.shape != (1800,) or not np.isfinite(policy).all():
+            raise ValueError('policy must be finite with shape (1800,)')
+        if (policy < 0).any() or not np.isclose(policy.sum(), 1.0, atol=1e-5):
+            raise ValueError('policy must be nonnegative and normalized')
+        if np.ndim(value) != 0 or not np.isfinite(value) or not -1 <= value <= 1:
+            raise ValueError('value must be a finite scalar in [-1, 1]')
+        self.buffer.append((state.copy(), policy.copy(), float(value)))
     
     def add_game(self, states: List[np.ndarray], policies: List[np.ndarray], 
                  winner: float):
@@ -47,11 +57,11 @@ class ReplayBuffer:
         if winner not in (-1.0, 0.0, 1.0):
             raise ValueError("winner must be -1.0, 0.0, or 1.0")
 
-        # Value từ góc nhìn của từng position
+        # Validate the whole game before touching the live buffer.
+        pending = ReplayBuffer(max(1, len(states)))
         for i, (state, policy) in enumerate(zip(states, policies)):
-            # Flip value perspective cho mỗi nước đi
-            value = winner if i % 2 == 0 else -winner
-            self.add(state, policy, value)
+            pending.add(state, policy, winner if i % 2 == 0 else -winner)
+        self.buffer.extend(pending.buffer)
     
     def sample(self, batch_size: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -65,7 +75,7 @@ class ReplayBuffer:
             policies: shape (batch_size, 1800)
             values: shape (batch_size,)
         """
-        if batch_size <= 0:
+        if type(batch_size) is not int or batch_size <= 0:
             raise ValueError("batch_size must be positive")
         if self.is_empty():
             raise ValueError("Cannot sample from an empty replay buffer")
@@ -81,6 +91,58 @@ class ReplayBuffer:
         
         return states, policies, values
     
+    def state_dict(self) -> dict:
+        """Return ordered CPU tensors and primitive metadata for safe checkpoints."""
+        import torch
+
+        from ..game.rules import ACTION_ENCODING_VERSION, RULESET_VERSION
+
+        entries = list(self.buffer)
+        states = np.asarray([s for s, _, _ in entries], dtype=np.float32).reshape(-1, 19, 10, 9)
+        policies = np.asarray([p for _, p, _ in entries], dtype=np.float32).reshape(-1, 1800)
+        values = np.asarray([v for _, _, v in entries], dtype=np.float32)
+        return {
+            'format_version': 1, 'max_size': self.max_size,
+            'action_encoding_version': ACTION_ENCODING_VERSION,
+            'ruleset_version': RULESET_VERSION,
+            'states': torch.from_numpy(states),
+            'policies': torch.from_numpy(policies),
+            'values': torch.from_numpy(values),
+        }
+
+    def load_state_dict(self, payload: dict) -> None:
+        """Validate an entire snapshot before replacing the live replay buffer."""
+        from ..game.rules import ACTION_ENCODING_VERSION, RULESET_VERSION
+
+        if not isinstance(payload, dict) or payload.get('format_version') != 1:
+            raise ValueError('Legacy replay data; retrain with versioned data.')
+        if payload.get('action_encoding_version') != ACTION_ENCODING_VERSION:
+            raise ValueError('Incompatible replay action encoding; retrain.')
+        if payload.get('ruleset_version') != RULESET_VERSION:
+            raise ValueError('Incompatible replay ruleset; retrain.')
+        required = {'states', 'policies', 'values', 'max_size'}
+        if not required.issubset(payload):
+            raise ValueError('Replay snapshot is missing arrays/capacity.')
+        arrays = []
+        for name in ('states', 'policies', 'values'):
+            value = payload[name]
+            if hasattr(value, 'detach'):
+                value = value.detach().cpu().numpy()
+            arrays.append(np.asarray(value, dtype=np.float32))
+        states, policies, values = arrays
+        if states.ndim != 4:
+            raise ValueError('Replay states must be a four-dimensional batch.')
+        count = len(states)
+        if states.shape != (count, 19, 10, 9) or policies.shape != (count, 1800) or values.shape != (count,):
+            raise ValueError('Replay snapshot array shapes/counts disagree.')
+        capacity = payload['max_size']
+        if type(capacity) is not int or capacity <= 0 or count > capacity:
+            raise ValueError('Invalid replay capacity or snapshot count.')
+        replacement = ReplayBuffer(capacity)
+        for state, policy, value in zip(states, policies, values):
+            replacement.add(state, policy, value)
+        self.max_size, self.buffer = replacement.max_size, replacement.buffer
+
     def __len__(self):
         """Số lượng positions trong buffer"""
         return len(self.buffer)
