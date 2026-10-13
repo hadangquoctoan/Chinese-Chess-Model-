@@ -1,3 +1,4 @@
+import math
 from typing import List, Tuple
 
 import numpy as np
@@ -15,7 +16,9 @@ class SelfPlayWorker:
     """Worker để chạy self-play games"""
     
     def __init__(self, model: ChineseChessNet, mcts_simulations: int = 400,
-                 temperature: float = 1.0, temperature_threshold: int = 15):
+                 temperature: float = 1.0, temperature_threshold: int = 15,
+                 dirichlet_alpha: float = 0.3, dirichlet_epsilon: float = 0.25,
+                 max_game_plies: int = MAX_GAME_PLIES, no_capture_limit: int = 100):
         """
         Args:
             model: Neural network
@@ -23,8 +26,8 @@ class SelfPlayWorker:
             temperature: Temperature ban đầu (exploration)
             temperature_threshold: Sau bao nhiêu nước thì giảm temperature
         """
-        if temperature < 0:
-            raise ValueError("temperature cannot be negative")
+        if not math.isfinite(temperature) or temperature < 0:
+            raise ValueError("temperature must be finite and non-negative")
         if temperature_threshold < 0:
             raise ValueError("temperature_threshold cannot be negative")
 
@@ -32,6 +35,14 @@ class SelfPlayWorker:
         self.mcts_simulations = mcts_simulations
         self.temperature = temperature
         self.temperature_threshold = temperature_threshold
+        self.dirichlet_alpha = dirichlet_alpha
+        self.dirichlet_epsilon = dirichlet_epsilon
+        self.max_game_plies = max_game_plies
+        self.no_capture_limit = no_capture_limit
+        self.last_termination_reason = "Game in progress"
+        GameState(max_plies=max_game_plies, no_capture_limit=no_capture_limit)
+        MCTS(model, num_simulations=mcts_simulations, dirichlet_alpha=dirichlet_alpha,
+             dirichlet_epsilon=dirichlet_epsilon)
     
     def play_game(self, verbose: bool = False) -> Tuple[List[np.ndarray], List[np.ndarray], float]:
         """
@@ -42,8 +53,11 @@ class SelfPlayWorker:
             policies: List of MCTS policies
             winner: 1.0 (red wins), -1.0 (black wins), 0.0 (draw)
         """
-        game_state = GameState()
-        mcts = MCTS(self.model, num_simulations=self.mcts_simulations)
+        game_state = GameState(max_plies=self.max_game_plies,
+                               no_capture_limit=self.no_capture_limit)
+        mcts = MCTS(self.model, num_simulations=self.mcts_simulations,
+                    dirichlet_alpha=self.dirichlet_alpha,
+                    dirichlet_epsilon=self.dirichlet_epsilon)
         
         states = []
         policies = []
@@ -78,12 +92,9 @@ class SelfPlayWorker:
             
             move_count += 1
             
-            if move_count >= MAX_GAME_PLIES:
-                if verbose:
-                    print(f"Game reached the {MAX_GAME_PLIES}-ply safety limit; recording a draw")
-                break
-        
+
         # Determine winner
+        self.last_termination_reason = game_state.get_termination_reason()
         winner_bool = game_state.get_winner()
         if winner_bool is None:
             winner = 0.0  # Draw
