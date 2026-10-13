@@ -12,6 +12,7 @@ from .move_history import MoveHistory
 from .position_tracker import PositionTracker
 from .game_result import GameResult
 from .state_encoder import StateEncoder
+from .repetition import assign_piece_ids, chase_targets
 
 
 class GameState:
@@ -26,8 +27,13 @@ class GameState:
     - StateEncoder: Encode cho neural network
     """
     
-    def __init__(self):
+    def __init__(self, max_plies: int = 200, no_capture_limit: int = 100):
         """Khởi tạo trạng thái game mới"""
+        if any(type(value) is not int or value <= 0
+               for value in (max_plies, no_capture_limit)):
+            raise ValueError('Game limits must be positive integers')
+        self.max_plies = max_plies
+        self.no_capture_limit = no_capture_limit
         self.board = Board()
         self.is_red_turn = True  # Đỏ đi trước
         
@@ -35,9 +41,22 @@ class GameState:
         self._move_history = MoveHistory()
         self._position_tracker = PositionTracker()
         
+        assign_piece_ids(self.board, reset=True)
         # Save initial position
         self._position_tracker.save_position(self.board, self.is_red_turn)
     
+    def reset_history(self) -> None:
+        """Start a fresh game from the edited board and current turn.
+
+        Call after manual board setup; this clears undo and repetition data.
+        Only general counts are validated, allowing focused test positions.
+        """
+        Rules.validate_position(self.board)
+        assign_piece_ids(self.board, reset=True)
+        self._move_history.clear()
+        self._position_tracker.clear()
+        self._position_tracker.save_position(self.board, self.is_red_turn)
+
     def make_move(
         self,
         from_row: int,
@@ -57,17 +76,25 @@ class GameState:
         Returns:
             True nếu nước đi hợp lệ và đã thực hiện
         """
+        if self.is_terminal():
+            return False
         # Kiểm tra tính hợp lệ
         if not Rules.is_move_legal(
             self.board, from_row, from_col, to_row, to_col, self.is_red_turn
         ):
             return False
         
+        assign_piece_ids(self.board)
+        prior_threats = chase_targets(self.board, from_row, from_col)
         # Thực hiện di chuyển
         captured = self.board.move_piece(from_row, from_col, to_row, to_col)
         
         # Lưu vào lịch sử
         self._move_history.add_move(from_row, from_col, to_row, to_col, captured)
+        record = self._move_history.get_last_move()
+        record.mover_is_red = self.is_red_turn
+        record.gave_check = Rules.is_in_check(self.board, not self.is_red_turn)
+        record.chased_piece_ids = chase_targets(self.board, to_row, to_col) - prior_threats
         
         # Chuyển lượt
         self.is_red_turn = not self.is_red_turn
@@ -121,6 +148,8 @@ class GameState:
         Returns:
             List of (from_row, from_col, to_row, to_col)
         """
+        if self.is_terminal():
+            return []
         return Rules.get_all_legal_moves(self.board, self.is_red_turn)
     
     def is_terminal(self) -> bool:
@@ -134,7 +163,9 @@ class GameState:
             self.board,
             self.is_red_turn,
             self._move_history,
-            self._position_tracker
+            self._position_tracker,
+            self.max_plies,
+            self.no_capture_limit
         )
     
     def get_winner(self) -> Optional[bool]:
@@ -150,7 +181,9 @@ class GameState:
             self.board,
             self.is_red_turn,
             self._move_history,
-            self._position_tracker
+            self._position_tracker,
+            self.max_plies,
+            self.no_capture_limit
         )
     
     def get_game_result(self) -> float:
@@ -166,7 +199,9 @@ class GameState:
             self.board,
             self.is_red_turn,
             self._move_history,
-            self._position_tracker
+            self._position_tracker,
+            self.max_plies,
+            self.no_capture_limit
         )
     
     def get_termination_reason(self) -> str:
@@ -180,7 +215,9 @@ class GameState:
             self.board,
             self.is_red_turn,
             self._move_history,
-            self._position_tracker
+            self._position_tracker,
+            self.max_plies,
+            self.no_capture_limit
         )
     
     def to_tensor(self) -> np.ndarray:
@@ -191,10 +228,8 @@ class GameState:
             np.ndarray shape (19, 10, 9)
         """
         return StateEncoder.to_tensor(
-            self.board,
-            self.is_red_turn,
-            self._move_history,
-            self._position_tracker
+            self.board, self.is_red_turn, self._move_history,
+            self._position_tracker, self.no_capture_limit, self.max_plies
         )
     
     def copy(self) -> 'GameState':
@@ -207,6 +242,8 @@ class GameState:
         new_state = GameState.__new__(GameState)
         new_state.board = self.board.copy()
         new_state.is_red_turn = self.is_red_turn
+        new_state.max_plies = self.max_plies
+        new_state.no_capture_limit = self.no_capture_limit
         new_state._move_history = self._move_history.copy()
         new_state._position_tracker = self._position_tracker.copy()
         return new_state
@@ -250,23 +287,9 @@ class GameState:
         
         return "\n".join(result)
     
-    def get_move_notation(
-        self,
-        from_row: int,
-        from_col: int,
-        to_row: int,
-        to_col: int
-    ) -> str:
-        """
-        Chuyển nước đi sang ký hiệu đơn giản
-        
-        Args:
-            from_row, from_col: Vị trí xuất phát
-            to_row, to_col: Vị trí đích
-            
-        Returns:
-            String như "e2-e4"
-        """
+    def get_move_notation(self, from_row: int, from_col: int,
+                          to_row: int, to_col: int) -> str:
+        """Return simple absolute coordinate notation, e.g. e2-e4."""
         cols = 'abcdefghi'
         from_pos = f"{cols[from_col]}{from_row}"
         to_pos = f"{cols[to_col]}{to_row}"
