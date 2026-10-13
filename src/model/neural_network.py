@@ -78,6 +78,7 @@ class ChineseChessNet(nn.Module):
         
         if config is None:
             config = ModelConfig()
+        config.validate()
         self.config = config
         
         # Initial convolutional block
@@ -145,6 +146,10 @@ class ChineseChessNet(nn.Module):
                 f"{self.config.board_height}, {self.config.board_width})"
             )
 
+        if board_tensor.dim() != 4 or board_tensor.shape[0] != 1:
+            raise ValueError("predict accepts a single position, not a batch")
+        if not torch.isfinite(board_tensor).all():
+            raise ValueError("board_tensor must contain finite values")
         was_training = self.training
         self.eval()
         try:
