@@ -1,6 +1,7 @@
 """
 Cấu hình model
 """
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -24,6 +25,10 @@ class ModelConfig:
     board_height: int = 10
     board_width: int = 9
     action_space: int = 1800
+    action_encoding_version: str = "piece-slots-v2"
+    ruleset_version: str = "xiangqi-training-v2"
+    max_game_plies: int = 200
+    no_capture_limit: int = 100
 
     # Training
     learning_rate: float = 0.001
@@ -33,6 +38,29 @@ class ModelConfig:
     # Mixed precision
     use_amp: bool = True  # Automatic Mixed Precision
     
+    def validate(self) -> None:
+        """Reject incompatible tensor/action contracts and invalid budgets."""
+        if (self.input_channels, self.board_height, self.board_width,
+                self.action_space) != (19, 10, 9, 1800):
+            raise ValueError("Model requires input (19, 10, 9) and 1800 actions")
+        if type(self.use_amp) is not bool:
+            raise ValueError("use_amp must be a YAML boolean, not a string or integer")
+        if self.action_encoding_version != "piece-slots-v2":
+            raise ValueError("Incompatible action encoding; retrain legacy checkpoints")
+        if self.ruleset_version != "xiangqi-training-v2":
+            raise ValueError("Incompatible training ruleset")
+        for field in ("num_channels", "policy_channels", "value_channels", "batch_size",
+                      "max_game_plies", "no_capture_limit"):
+            value = getattr(self, field)
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{field} must be a positive integer")
+        if type(self.num_residual_blocks) is not int or self.num_residual_blocks < 0:
+            raise ValueError("num_residual_blocks must be a non-negative integer")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("learning_rate must be finite and positive")
+        if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
+            raise ValueError("weight_decay must be finite and non-negative")
+
     @classmethod
     def from_size(cls, size: ModelSize) -> 'ModelConfig':
         """Tạo config từ model size preset"""
