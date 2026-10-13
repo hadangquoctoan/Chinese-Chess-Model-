@@ -93,7 +93,7 @@ def test_action_decoding_returns_a_legal_move():
     """An encoded legal move must decode to a legal move for the same player."""
     game = GameState()
     legal_moves = game.get_legal_moves()
-    action_index = Rules.move_to_action_index(*legal_moves[0])
+    action_index = Rules.move_to_action_index(*legal_moves[0], board=game.board)
     decoded_move = Rules.action_index_to_move(
         action_index,
         game.board,
