@@ -6,15 +6,32 @@ from typing import List, Optional, Tuple
 from .board import Board
 from .pieces import PieceType
 
-ACTION_SPACE_SIZE = 1800
-ACTION_DESTINATION_BUCKETS = 20
-BOARD_ROWS = 10
-BOARD_COLS = 9
-Move = Tuple[int, int, int, int]
+from .action_encoding import (
+    ACTION_DESTINATION_BUCKETS, ACTION_ENCODING_VERSION, ACTION_SPACE_SIZE,
+    BOARD_COLS, BOARD_ROWS, Move, decode_geometry, encode, valid_coordinate,
+)
+
+RULESET_VERSION = 'xiangqi-training-v2'
 
 class Rules:
     """Quản lý luật chơi cờ tướng"""
     
+    @staticmethod
+    def has_valid_generals(board: Board) -> bool:
+        """A playable board has exactly one general of each color."""
+        counts = [0, 0]
+        for row in board.board:
+            for piece in row:
+                if piece.piece_type == PieceType.GENERAL:
+                    counts[int(piece.is_red)] += 1
+        return counts == [1, 1]
+
+    @staticmethod
+    def validate_position(board: Board) -> None:
+        """Reject missing or duplicate generals instead of silently playing."""
+        if not Rules.has_valid_generals(board):
+            raise ValueError('Position must contain exactly one general of each color')
+
     @staticmethod
     def is_in_check(board: Board, is_red: bool) -> bool:
         """
@@ -30,7 +47,7 @@ class Rules:
         # Tìm vị trí tướng
         general_pos = board.find_general(is_red)
         if general_pos is None:
-            return False  # Không có tướng (trường hợp test)
+            return True  # A missing general cannot be treated as safe.
         
         general_row, general_col = general_pos
         
@@ -85,14 +102,14 @@ class Rules:
     @staticmethod
     def is_stalemate(board: Board, is_red: bool) -> bool:
         """
-        Kiểm tra hòa (stalemate) - không bị chiếu nhưng không có nước đi hợp lệ
+        Detect stalemate: no legal moves without check (a loss in Xiangqi)
         
         Args:
             board: Bàn cờ hiện tại
             is_red: Màu của bên cần kiểm tra
         
         Returns:
-            True nếu hòa
+            True if stalemated
         """
         # Không bị chiếu
         if Rules.is_in_check(board, is_red):
@@ -118,6 +135,10 @@ class Rules:
         Returns:
             True nếu hợp lệ
         """
+        if (not Rules.has_valid_generals(board)
+                or not valid_coordinate(from_row, from_col)
+                or not valid_coordinate(to_row, to_col)):
+            return False
         piece = board.get_piece(from_row, from_col)
         
         # Kiểm tra có quân không
@@ -149,6 +170,17 @@ class Rules:
         return True
     
     @staticmethod
+    def has_legal_move(board: Board, is_red: bool) -> bool:
+        """Stop at the first legal move for terminal queries."""
+        if not Rules.has_valid_generals(board):
+            return False
+        for row, col, piece in board.get_all_pieces(is_red):
+            for target_row, target_col in piece.get_possible_moves(row, col, board):
+                if Rules.is_move_legal(board, row, col, target_row, target_col, is_red):
+                    return True
+        return False
+
+    @staticmethod
     def get_all_legal_moves(board: Board, is_red: bool) -> List[Move]:
         """
         Lấy tất cả các nước đi hợp lệ
@@ -160,6 +192,8 @@ class Rules:
         Returns:
             List of (from_row, from_col, to_row, to_col)
         """
+        if not Rules.has_valid_generals(board):
+            return []
         legal_moves = []
         
         # Duyệt tất cả quân cờ của bên đi
@@ -177,54 +211,17 @@ class Rules:
         return legal_moves
     
     @staticmethod
-    def move_to_action_index(from_row: int, from_col: int, to_row: int, to_col: int) -> int:
-        """
-        Chuyển nước đi thành action index cho neural network
-        
-        Returns:
-            Action index (0-1799)
-        """
-        if not Rules._is_valid_coordinate(from_row, from_col):
-            raise ValueError("Move origin is outside the board")
-        if not Rules._is_valid_coordinate(to_row, to_col):
-            raise ValueError("Move destination is outside the board")
+    def move_to_action_index(from_row: int, from_col: int, to_row: int,
+                             to_col: int, board: Board) -> int:
+        """Encode a move using the origin's piece and absolute geometry."""
+        return encode(from_row, from_col, to_row, to_col, board)
 
-        # The current policy contract reserves 20 slots for every origin square.
-        # It is shared with MCTS; do not change it without migrating checkpoints.
-        from_pos = from_row * BOARD_COLS + from_col
-        to_pos = to_row * BOARD_COLS + to_col
-        return from_pos * ACTION_DESTINATION_BUCKETS + (to_pos % ACTION_DESTINATION_BUCKETS)
-    
     @staticmethod
     def action_index_to_move(action_index: int, board: Board, is_red: bool) -> Optional[Move]:
-        """
-        Chuyển action index thành nước đi
-        
-        Returns:
-            (from_row, from_col, to_row, to_col) or None if invalid
-        """
-        if not isinstance(action_index, int) or not 0 <= action_index < ACTION_SPACE_SIZE:
-            return None
-
-        from_pos = action_index // ACTION_DESTINATION_BUCKETS
-        from_row = from_pos // BOARD_COLS
-        from_col = from_pos % BOARD_COLS
-        
-        # Get possible moves for this piece
-        piece = board.get_piece(from_row, from_col)
-        if piece.piece_type == PieceType.EMPTY or piece.is_red != is_red:
-            return None
-        
-        legal_moves = Rules.get_all_legal_moves(board, is_red)
-        for move in legal_moves:
-            if move[:2] != (from_row, from_col):
-                continue
-            if Rules.move_to_action_index(*move) == action_index:
-                return move
-
+        """Decode exactly one slot, returning None unless it is board-legal."""
+        move = decode_geometry(action_index, board, is_red)
+        if move is not None and Rules.is_move_legal(board, *move, is_red):
+            return move
         return None
 
-    @staticmethod
-    def _is_valid_coordinate(row: int, col: int) -> bool:
-        """Return whether a board coordinate is in range."""
-        return 0 <= row < BOARD_ROWS and 0 <= col < BOARD_COLS
+    _is_valid_coordinate = staticmethod(valid_coordinate)
