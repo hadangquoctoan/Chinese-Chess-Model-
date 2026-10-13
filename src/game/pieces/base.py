@@ -13,6 +13,7 @@ class Piece:
     def __init__(self, piece_type: PieceType, is_red: bool):
         self.piece_type = piece_type
         self.is_red = is_red
+        self.repetition_id: int | None = None
 
     def __str__(self) -> str:
         """Return the display symbol for this piece."""
