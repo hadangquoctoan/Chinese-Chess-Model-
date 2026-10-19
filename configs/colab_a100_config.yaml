@@ -1,0 +1,57 @@
+# Configuration optimized specifically for Google Colab Pro NVIDIA A100 (40GB VRAM) & High-RAM (83.5GB)
+
+# Model architecture - Balanced ResNet for deep search and fast inference
+model:
+  size: medium
+  num_residual_blocks: 10
+  num_channels: 256
+  policy_channels: 32
+  value_channels: 4
+
+# Training configuration - Tuned for A100 Tensor Cores
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 1024  # A100 40GB handles 1024 easily
+  use_amp: true    # FP16 Automatic Mixed Precision on A100 Tensor Cores
+
+# Self-play configuration
+self_play:
+  num_games_per_iteration: 60  # ~35-45 minutes per iteration
+  mcts_simulations: 200        # High tactical quality while maintaining reasonable throughput
+  temperature: 1.0
+  temperature_threshold: 15
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  parallel_workers: 1          # Sequential worker
+  max_game_plies: 200
+  no_capture_limit: 100
+
+# Replay buffer - 83.5GB System RAM allows large buffer without OOM risk
+replay_buffer:
+  max_size: 500000             # ~4-5GB RAM footprint
+
+# Training loop
+training_loop:
+  num_iterations: 30
+  samples_per_iteration: 30000
+  evaluation_games: 20         # Must be even for paired-color evaluation
+  score_threshold: 0.55        # Accept candidate if (wins + 0.5 * draws) / games >= 55%
+  evaluation_mcts_simulations: 200
+  evaluation_opening_plies: 4  # Paired opening plies for fairness
+  evaluation_opening_seed: 0
+  checkpoint_every: 2          # Save numbered checkpoint every 2 iterations
+  auto_checkpoint_interval: 1800  # Checkpoint progress every 30 minutes
+  early_stopping_patience: 10
+
+# Paths on Google Colab (persisted to Google Drive)
+paths:
+  checkpoint_dir: /content/drive/MyDrive/chinese_chess_ai/checkpoints
+  best_model_path: /content/drive/MyDrive/chinese_chess_ai/best_model.pt
+  log_dir: /content/drive/MyDrive/chinese_chess_ai/logs
+
+# Resource optimization
+optimization:
+  gradient_accumulation_steps: 1
+  max_batch_size: 1024
+  num_workers: 4

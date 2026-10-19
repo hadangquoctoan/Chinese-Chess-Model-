@@ -23,7 +23,9 @@ self_play:
   temperature_threshold: 15
   dirichlet_alpha: 0.3
   dirichlet_epsilon: 0.25
-  parallel_workers: 1  # Colab has 1 GPU
+  parallel_workers: 1  # Only sequential self-play supported; values >1 are rejected
+  max_game_plies: 200
+  no_capture_limit: 100
 
 # Replay buffer
 replay_buffer:
@@ -34,13 +36,13 @@ training_loop:
   num_iterations: 50  # Each iteration ~20-30 minutes
   samples_per_iteration: 50000
   evaluation_games: 100  # Reduce to 50 for faster evaluation
-  win_rate_threshold: 0.55
-  checkpoint_every: 5  # Save every 5 iterations (~2 hours)
-
-# Colab specific settings
-colab:
-  auto_checkpoint_interval: 7200  # Save every 2 hours (seconds)
-  early_stopping_patience: 10  # Stop if no improvement after 10 iterations
+  score_threshold: 0.55  # Match score (wins + 0.5 * draws) / games
+  evaluation_mcts_simulations: 200
+  evaluation_opening_plies: 4  # Reproducible paired openings, swapped colors
+  evaluation_opening_seed: 0
+  checkpoint_every: 5
+  auto_checkpoint_interval: 7200  # Seconds, checked after each game/epoch/evaluation
+  early_stopping_patience: 10  # Stop after this many consecutive gate rejections
   
 # Paths (will be created in Colab)
 paths:

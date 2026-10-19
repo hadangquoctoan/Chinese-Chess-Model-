@@ -21,7 +21,7 @@ def parse_move(move_str: str) -> Optional[Move]:
     from_col_char, from_row_char, _, to_col_char, to_row_char = normalized_move
     if not ('a' <= from_col_char <= 'i' and 'a' <= to_col_char <= 'i'):
         return None
-    if not (from_row_char.isdigit() and to_row_char.isdigit()):
+    if not ('0' <= from_row_char <= '9' and '0' <= to_row_char <= '9'):
         return None
 
     return (
@@ -35,8 +35,7 @@ def parse_move(move_str: str) -> Optional[Move]:
 def main() -> None:
     import torch
     from src.model.mcts import MCTS
-    from src.model.model_config import ModelConfig
-    from src.model.neural_network import ChineseChessNet
+    from src.utils.model_io import load_model_artifact
 
     parser = argparse.ArgumentParser(description='Play Chinese Chess against AI')
     parser.add_argument('--model', type=str, required=True,
@@ -52,20 +51,19 @@ def main() -> None:
     print("Loading model...")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    config = ModelConfig.from_size('medium')  # Adjust if needed
-    model = ChineseChessNet(config)
-    model.load_state_dict(torch.load(args.model, map_location=device))
-    model.to(device)
+    model = load_model_artifact(args.model, device=device)
     model.eval()
     
     print(f"Model loaded on {device}")
     print(f"MCTS simulations: {args.mcts_sims}")
     
     # Setup MCTS
-    mcts = MCTS(model, num_simulations=args.mcts_sims, temperature=0.1)
+    mcts = MCTS(model, num_simulations=args.mcts_sims,
+                temperature=0.0, dirichlet_epsilon=0.0)
     
     # Start game
-    game_state = GameState()
+    game_state = GameState(max_plies=model.config.max_game_plies,
+                           no_capture_limit=model.config.no_capture_limit)
     human_is_red = (args.human_color == 'red')
     
     print("\n" + "="*60)
@@ -110,7 +108,7 @@ def main() -> None:
             # AI move
             print(f"AI thinking ({'Red' if game_state.is_red_turn else 'Black'})...")
             
-            move, _ = mcts.get_action_probs(game_state, temperature=0.1)
+            move, _ = mcts.get_action_probs(game_state, temperature=0.0)
             
             if move is None:
                 print("AI has no legal moves!")

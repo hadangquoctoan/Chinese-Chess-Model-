@@ -21,6 +21,9 @@ self_play:
   temperature_threshold: 15  # After this many moves, use near-greedy
   dirichlet_alpha: 0.3
   dirichlet_epsilon: 0.25
+  parallel_workers: 1  # Values >1 rejected: parallel self-play is not implemented
+  max_game_plies: 200
+  no_capture_limit: 100
 
 # Replay buffer
 replay_buffer:
@@ -31,7 +34,13 @@ training_loop:
   num_iterations: 50
   samples_per_iteration: 50000
   evaluation_games: 100
-  win_rate_threshold: 0.55  # New model needs >55% to replace best
+  score_threshold: 0.55  # Match score (wins + 0.5 * draws) / games must exceed this
+  evaluation_mcts_simulations: 200
+  evaluation_opening_plies: 4  # Reproducible openings paired with swapped colors
+  evaluation_opening_seed: 0
+  checkpoint_every: 5
+  auto_checkpoint_interval: 0  # Seconds; 0 disables time-triggered checkpoints
+  early_stopping_patience: 0  # Consecutive rejections; 0 disables early stopping
 
 # Paths
 paths:
