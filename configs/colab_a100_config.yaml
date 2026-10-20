@@ -1,47 +1,47 @@
-# Configuration optimized specifically for Google Colab Pro NVIDIA A100 (40GB VRAM) & High-RAM (83.5GB)
+# Configuration scaled for Google Colab Pro NVIDIA A100 (40GB/80GB VRAM) & High-RAM (83.5GB ~ 95GB)
 
-# Model architecture - Balanced ResNet for deep search and fast inference
+# Model architecture - Deep ResNet-20 / 384 channels (~61.4M params, AlphaZero scale)
 model:
-  size: medium
-  num_residual_blocks: 10
-  num_channels: 256
-  policy_channels: 32
-  value_channels: 4
+  size: large
+  num_residual_blocks: 20
+  num_channels: 384
+  policy_channels: 48
+  value_channels: 8
 
-# Training configuration - Tuned for A100 Tensor Cores
+# Training configuration - Tuned for A100 Tensor Cores with AMP FP16
 training:
   learning_rate: 0.001
   weight_decay: 0.0001
-  batch_size: 1024  # A100 40GB handles 1024 easily
-  use_amp: true    # FP16 Automatic Mixed Precision on A100 Tensor Cores
+  batch_size: 1024  # High throughput on A100 Tensor Cores
+  use_amp: true    # FP16 Automatic Mixed Precision
 
-# Self-play configuration
+# Self-play configuration - Deep tactical search
 self_play:
-  num_games_per_iteration: 60  # ~35-45 minutes per iteration
-  mcts_simulations: 200        # High tactical quality while maintaining reasonable throughput
+  num_games_per_iteration: 100 # High data volume per iteration
+  mcts_simulations: 400        # Deep 400-sim MCTS for high tactical precision
   temperature: 1.0
   temperature_threshold: 15
   dirichlet_alpha: 0.3
   dirichlet_epsilon: 0.25
-  parallel_workers: 1          # Sequential worker
+  parallel_workers: 1          # Sequential self-play worker
   max_game_plies: 200
   no_capture_limit: 100
 
-# Replay buffer - 83.5GB System RAM allows large buffer without OOM risk
+# Replay buffer - 95GB High-RAM allows storing 1,000,000 positions (~14GB RAM footprint)
 replay_buffer:
-  max_size: 500000             # ~4-5GB RAM footprint
+  max_size: 1000000            # Retains large historical memory without OOM
 
 # Training loop
 training_loop:
-  num_iterations: 30
-  samples_per_iteration: 30000
-  evaluation_games: 20         # Must be even for paired-color evaluation
+  num_iterations: 50
+  samples_per_iteration: 50000 # Sample 50,000 positions per training epoch
+  evaluation_games: 20         # Paired-color evaluation
   score_threshold: 0.55        # Accept candidate if (wins + 0.5 * draws) / games >= 55%
-  evaluation_mcts_simulations: 200
-  evaluation_opening_plies: 4  # Paired opening plies for fairness
+  evaluation_mcts_simulations: 400 # Evaluate candidate at full 400-sim depth
+  evaluation_opening_plies: 4  # Paired opening plies for fair evaluation
   evaluation_opening_seed: 0
   checkpoint_every: 2          # Save numbered checkpoint every 2 iterations
-  auto_checkpoint_interval: 1800  # Checkpoint progress every 30 minutes
+  auto_checkpoint_interval: 1800 # Checkpoint progress every 30 minutes
   early_stopping_patience: 10
 
 # Paths on Google Colab (persisted to Google Drive)
@@ -50,8 +50,8 @@ paths:
   best_model_path: /content/drive/MyDrive/chinese_chess_ai/best_model.pt
   log_dir: /content/drive/MyDrive/chinese_chess_ai/logs
 
-# Resource optimization
+# Resource optimization - High-RAM Colab Pro has 12-16 vCPUs
 optimization:
   gradient_accumulation_steps: 1
   max_batch_size: 1024
-  num_workers: 4
+  num_workers: 8
