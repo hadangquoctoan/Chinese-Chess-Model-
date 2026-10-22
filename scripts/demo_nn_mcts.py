@@ -96,7 +96,6 @@ def demo_nodes(game: GameState) -> None:
     assert target.shape == (1800,) and np.isclose(target.sum(), 1.0)
     print(f'get_policy_target(): shape={target.shape}, sum={target.sum():.4f}')
 
-
 def main() -> None:
     """Demonstrate inference and search on the initial position with random weights."""
     np.random.seed(0)

@@ -1,0 +1,89 @@
+[hidden] {
+  display: none !important;
+}
+
+.opponent-controls {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.opponent-controls .panel-label {
+  margin: 6px 0 0;
+}
+
+.opponent-controls select,
+.opponent-controls input,
+.secondary-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.secondary-button {
+  cursor: pointer;
+}
+
+.secondary-button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.opponent-controls .coord-hint {
+  overflow-wrap: anywhere;
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor: not-allowed;
+}
+
+.command-button:disabled,
+.secondary-button:disabled {
+  opacity: 0.5;
+}
+
+.opponent-controls select:focus-visible,
+.opponent-controls input:focus-visible,
+.secondary-button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  body {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    overflow: visible;
+  }
+
+  .game-layout {
+    flex: none;
+    overflow: visible;
+  }
+
+  .board-region {
+    height: auto;
+  }
+
+  .board-frame {
+    width: min(100%, 52vh);
+  }
+
+  .game-panel {
+    grid-template-columns: 1fr;
+    max-height: none;
+    overflow: visible;
+  }
+}

@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python -c \"from src.model.model_config import ModelConfig; print\\('import OK'\\)\")"
-    ]
-  }
-}

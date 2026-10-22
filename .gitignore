@@ -32,20 +32,27 @@ PIPFILE.lock
 *.pth
 *.onnx
 
-# Training outputs
+# Training outputs and models
 logs/
-models/checkpoints/
-models/version_history/
+models/
 data/self_play_games/
 data/training_data/
+data/teacher_labels/
+
+# Pikafish: track Linux (rented server) + Windows (laptop) + NNUE.
+# Ignore other platform builds so clone stays smaller.
+pikafish/Pikafish-Android-arm64-universal
+pikafish/Pikafish-MacOS-universal
 
 # TensorBoard
 runs/
 events.out.tfevents.*
 
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
+# Jupyter
+.ipynb_checkpoints/
+
+# Local git helpers
+.tmp_git_*
 
 # VS Code
 .vscode/
@@ -55,6 +62,9 @@ events.out.tfevents.*
 
 # Cursor
 .cursor/
+
+# Claude Code local settings
+.claude/
 
 # macOS
 .DS_Store
@@ -74,15 +84,23 @@ venv.bak/
 
 # Testing
 .pytest_cache/
+.tmp_pytest/
 
-# Plans, agent rules and documentation
+# Plans, research, agent rules and documentation
 plans/
 plans
+research_methods/
+docs/
+
+# Markdown files and notes (root)
 AGENTS.md
 agents.md
 CLAUDE.md
 claude.md
-docs/
+OVERNIGHT_TRAINING.md
+overnight_training.md
+/*.md
+!/README.md
 
 # Temporary files
 *.tmp

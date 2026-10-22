@@ -25,8 +25,10 @@ def test_train_cli_exposes_explicit_checkpoint_fork(monkeypatch):
             calls.append(options)
         def run(self, **options):
             calls.append("run")
+        def close(self):
+            return None
     monkeypatch.setattr(train, "load_config", lambda path: {"training_loop": {}, "paths": {"log_dir": "unused"}})
-    monkeypatch.setattr(train, "create_session", lambda *args: FakeSession())
+    monkeypatch.setattr(train, "create_session", lambda *args, **kwargs: FakeSession())
     import logging
     monkeypatch.setattr(train, "setup_logger", lambda **options: logging.getLogger("cli-test"))
     train.main(["--resume", "checkpoint.pt", "--publish-missing-best"])

@@ -1,0 +1,60 @@
+# Laptop overnight: Quadro RTX 3000 6GB, 32GB DDR4, i7-9850H.
+# Budget is enforced by scripts/run_laptop_8h.py (default 8 hours), not num_iterations.
+# Output paths stay under models/laptop_8h so a rented 16h run is never mixed in.
+
+model:
+  size: small
+  num_residual_blocks: 5
+  num_channels: 128
+  policy_channels: 16
+  value_channels: 2
+
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 64
+  use_amp: true
+
+self_play:
+  num_games_per_iteration: 8
+  mcts_simulations: 64
+  temperature: 1.0
+  temperature_threshold: 15
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  parallel_workers: 1
+  max_game_plies: 200
+  no_capture_limit: 100
+
+replay_buffer:
+  max_size: 20000
+
+training_loop:
+  num_iterations: 200
+  samples_per_iteration: 2048
+  evaluation_games: 4
+  score_threshold: 0.55
+  evaluation_mcts_simulations: 32
+  evaluation_opening_plies: 4
+  evaluation_opening_seed: 0
+  checkpoint_every: 1
+  auto_checkpoint_interval: 600
+  early_stopping_patience: 0
+
+optimization:
+  num_workers: 0
+  max_batch_size: 32
+  gradient_accumulation_steps: 2
+
+paths:
+  checkpoint_dir: models/laptop_8h/checkpoints
+  best_model_path: models/laptop_8h/best_model.pt
+  log_dir: logs/laptop_8h
+
+sparring:
+  enabled: true
+  ratio: 0.3
+  depth: 1
+  threads: 4
+  hash_mb: 256
+  engine_path: pikafish/Pikafish-Windows-x86-64-universal.exe

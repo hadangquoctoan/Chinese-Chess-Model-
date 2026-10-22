@@ -1,5 +1,6 @@
 """Resumable AlphaZero orchestration, independent of command-line parsing."""
 from copy import deepcopy
+import logging
 import math
 from pathlib import Path
 import random
@@ -12,8 +13,33 @@ import torch
 from ..utils.model_io import (
     atomic_torch_save, build_model_artifact, safe_torch_load, validate_model_artifact,
 )
-from .self_play import SelfPlayWorker
 from .evaluator import Evaluator
+from .self_play import SelfPlayWorker
+from .sparring_config import validate_sparring_config
+from .sparring_depth import choose_sparring_depth
+from .worker_select import choose_worker_for_game
+
+_LOGGER = logging.getLogger('ChineseChessAI')
+
+
+def _empty_sparring_record() -> dict[int, dict[str, int]]:
+    return {1: {'wins': 0, 'losses': 0, 'draws': 0, 'games': 0},
+            2: {'wins': 0, 'losses': 0, 'draws': 0, 'games': 0}}
+
+
+def _copy_sparring_record(payload: Any) -> dict[int, dict[str, int]]:
+    record = _empty_sparring_record()
+    if not isinstance(payload, dict):
+        return record
+    for depth in (1, 2):
+        entry = payload.get(depth, payload.get(str(depth), {}))
+        if not isinstance(entry, dict):
+            continue
+        for key in record[depth]:
+            value = entry.get(key, 0)
+            if type(value) is int and value >= 0:
+                record[depth][key] = value
+    return record
 
 
 def _finite_number(value: Any, minimum: float = 0., maximum: float = math.inf) -> bool:
@@ -219,6 +245,7 @@ CONFIG_FIELDS = {
                       'evaluation_opening_seed'},
     'optimization': {'gradient_accumulation_steps', 'max_batch_size', 'num_workers'},
     'paths': {'checkpoint_dir', 'best_model_path', 'log_dir'},
+    'sparring': {'enabled', 'ratio', 'depth', 'threads', 'hash_mb', 'engine_path'},
 }
 
 
@@ -233,13 +260,15 @@ def score_threshold(config: dict[str, Any]) -> float:
 def iteration_settings(config: dict[str, Any]) -> dict[str, Any]:
     """Record budgets whose changes could corrupt a partially resumed iteration."""
     loop = config['training_loop']
+    sparring = validate_sparring_config(config.get('sparring'))
     return {'self_play': {**config['self_play'], **rules_limits(config), 'parallel_workers': 1},
             'samples_per_iteration': loop['samples_per_iteration'],
             'evaluation_games': loop['evaluation_games'],
             'evaluation_mcts_simulations': loop.get('evaluation_mcts_simulations', 200),
             'evaluation_opening_plies': loop.get('evaluation_opening_plies', 4),
             'evaluation_opening_seed': loop.get('evaluation_opening_seed', 0),
-            'score_threshold': score_threshold(config)}
+            'score_threshold': score_threshold(config),
+            'sparring': {'ratio': sparring['ratio'], 'depth': sparring['depth']}}
 
 
 def validate_session_config(config: dict[str, Any]) -> None:
@@ -275,6 +304,7 @@ def validate_session_config(config: dict[str, Any]) -> None:
     _validate_search_options(config)
     if not 0 <= score_threshold(config) <= 1:
         raise ValueError('training_loop.score_threshold must be between 0 and 1')
+    validate_sparring_config(config.get('sparring'))
 
 
 def _validate_search_options(config: dict[str, Any]) -> None:
@@ -331,6 +361,10 @@ class TrainingSession:
         self.games_completed = 0
         self.pending_losses = []
         self._worker = None
+        self._sparring_player = None
+        self._opponent_is_red = False
+        self._sparring_record = _empty_sparring_record()
+        self._iteration_sparring = _empty_sparring_record()
         self._saved_cuda_rng = []
 
     def start(self, resume: str | None = None, *, publish_missing_best: bool = False) -> None:
@@ -358,6 +392,9 @@ class TrainingSession:
             self.phase = state['phase']
             self.games_completed = state['games_completed']
             self.pending_losses = state['pending_losses']
+            self._opponent_is_red = bool(state.get('opponent_is_red', False))
+            self._sparring_record = _copy_sparring_record(state.get('sparring_record'))
+            self._iteration_sparring = _copy_sparring_record(state.get('iteration_sparring'))
             self._saved_cuda_rng = [value.cpu().clone() for value in state['rng']['cuda']]
             restore_rng_state(state['rng'])
             if publish_best:
@@ -380,7 +417,10 @@ class TrainingSession:
                  'phase': self.phase, 'games_completed': self.games_completed,
                  'pending_losses': self.pending_losses, 'rules_limits': rules_limits(self.config),
                  'replay_capacity': self.config['replay_buffer']['max_size'],
-                 'iteration_settings': iteration_settings(self.config)}
+                 'iteration_settings': iteration_settings(self.config),
+                 'opponent_is_red': self._opponent_is_red,
+                 'sparring_record': self._sparring_record,
+                 'iteration_sparring': self._iteration_sparring}
         self.trainer.save_checkpoint(path, additional_info={'training_session': state})
         self.last_checkpoint = self.clock()
 
@@ -390,16 +430,84 @@ class TrainingSession:
             path = Path(self.config['paths']['checkpoint_dir']) / 'checkpoint_progress.pt'
             self.save_progress(str(path))
 
+    def _self_play_options(self) -> dict[str, Any]:
+        return {key: value for key, value in self.config['self_play'].items()
+                if key not in ('num_games_per_iteration', 'parallel_workers')}
+
+    def close(self) -> None:
+        """Close a persistent Pikafish subprocess if one is open."""
+        self._close_sparring_player()
+
+    def _close_sparring_player(self) -> None:
+        player = self._sparring_player
+        self._sparring_player = None
+        if player is not None:
+            player.close()
+
+    def _ensure_sparring_player(self):
+        if self._sparring_player is None:
+            from ..engine.player import load_pikafish_player
+            cfg = validate_sparring_config(self.config.get('sparring'))
+            path = Path(cfg['engine_path']) if cfg['engine_path'] else None
+            self._sparring_player = load_pikafish_player(
+                depth=cfg['depth'], path=path, threads=cfg['threads'], hash_mb=cfg['hash_mb'])
+        return self._sparring_player
+
+    def _log_sparring_game(self, depth: int, opponent_is_red: bool,
+                           winner: float, plies: int) -> None:
+        model_is_red = not opponent_is_red
+        if winner == 0.0:
+            result = 'draw'
+        elif (winner == 1.0 and model_is_red) or (winner == -1.0 and not model_is_red):
+            result = 'win'
+        else:
+            result = 'loss'
+        color = 'red' if model_is_red else 'black'
+        _LOGGER.info('sparring | depth %s | model %s | result %s | plies %s',
+                     depth, color, result, plies)
+        bucket = depth if depth in self._sparring_record else 1
+        for record in (self._sparring_record[bucket], self._iteration_sparring[bucket]):
+            record['games'] += 1
+            record[{'win': 'wins', 'loss': 'losses', 'draw': 'draws'}[result]] += 1
+
+    def _log_sparring_record(self) -> None:
+        r1, r2 = self._iteration_sparring[1], self._iteration_sparring[2]
+        if r1['games'] or r2['games']:
+            _LOGGER.info('sparring record: %sW-%sL depth1, %sW-%sL depth2',
+                         r1['wins'], r1['losses'], r2['wins'], r2['losses'])
+        self._iteration_sparring = _empty_sparring_record()
+
+    def _play_generation_game(self) -> None:
+        sparring = validate_sparring_config(self.config.get('sparring'))
+        options = self._self_play_options()
+        kind = choose_worker_for_game(random, sparring['ratio'], sparring['enabled'])
+        if kind != 'sparring':
+            if self._worker is None:
+                self._worker = self.worker_factory(model=self.best_model, **options)
+            self.replay_buffer.add_game(*self._worker.play_game(verbose=False))
+            return
+        from .sparring_game import SparringWorker
+        player = self._ensure_sparring_player()
+        depth = choose_sparring_depth(
+            random, self._sparring_record[1]['wins'], self._sparring_record[1]['games'],
+            self._sparring_record[2]['wins'], self._sparring_record[2]['games'])
+        player.depth = depth
+        opponent_is_red = self._opponent_is_red
+        worker = SparringWorker(model=self.best_model, opponent=player,
+                                opponent_is_red=opponent_is_red, **options)
+        states, policies, winner = worker.play_game(verbose=False)
+        self.replay_buffer.add_game(states, policies, winner)
+        self._log_sparring_game(depth, opponent_is_red, winner, len(states))
+        self._opponent_is_red = not opponent_is_red
+
     def advance(self) -> dict[str, Any] | None:
         """Execute one whole game, epoch, or evaluation and checkpoint if due."""
         if self.phase == 'self_play':
-            if self._worker is None:
-                options = {key: value for key, value in self.config['self_play'].items()
-                           if key not in ('num_games_per_iteration', 'parallel_workers')}
-                self._worker = self.worker_factory(model=self.best_model, **options)
-            self.replay_buffer.add_game(*self._worker.play_game(verbose=False))
+            self._play_generation_game()
             self.games_completed += 1
             if self.games_completed == self.config['self_play']['num_games_per_iteration']:
+                self._log_sparring_record()
+                self._close_sparring_player()
                 self.phase = 'train'
         elif self.phase == 'train':
             self.pending_losses = list(self.trainer.train_epoch(
@@ -419,20 +527,32 @@ class TrainingSession:
             result = self.advance()
         return result
 
-    def run(self, on_iteration: Callable | None = None) -> None:
-        """Run until configured total iterations or consecutive rejection limit."""
+    def run(self, on_iteration: Callable | None = None,
+            should_stop: Callable[[], bool] | None = None) -> None:
+        """Run until configured total iterations, a stop callback, or rejection limit."""
         loop = self.config['training_loop']
         directory = Path(self.config['paths']['checkpoint_dir'])
         patience = loop.get('early_stopping_patience', 0)
-        while self.iteration < loop['num_iterations']:
-            if patience and self.stale_iterations >= patience:
-                break
-            metrics = self.run_iteration()
-            if self.iteration % loop.get('checkpoint_every', 5) == 0:
-                self.save_progress(str(directory / f'checkpoint_iter_{self.iteration}.pt'))
-            if on_iteration is not None:
-                on_iteration(metrics)
-        self.save_progress(str(directory / 'checkpoint_progress.pt'))
+        try:
+            while self.iteration < loop['num_iterations']:
+                if patience and self.stale_iterations >= patience:
+                    break
+                if should_stop is not None and should_stop():
+                    break
+                result = None
+                while result is None:
+                    if should_stop is not None and should_stop():
+                        break
+                    result = self.advance()
+                if result is None:
+                    break
+                if self.iteration % loop.get('checkpoint_every', 5) == 0:
+                    self.save_progress(str(directory / f'checkpoint_iter_{self.iteration}.pt'))
+                if on_iteration is not None:
+                    on_iteration(result)
+            self.save_progress(str(directory / 'checkpoint_progress.pt'))
+        finally:
+            self._close_sparring_player()
 
     def _evaluate(self) -> dict[str, Any]:
         loop = self.config['training_loop']
@@ -456,4 +576,5 @@ class TrainingSession:
         self.games_completed = 0
         self.pending_losses = []
         self._worker = None
+        self._close_sparring_player()
         return metrics

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Offline Xiangqi</title>
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/game-controls.css">
   </head>
   <body>
     <main class="app-shell">
@@ -19,7 +20,7 @@
             <span class="theme-icon theme-icon-light" aria-hidden="true">&#9728;</span>
             <span class="theme-icon theme-icon-dark" aria-hidden="true">&#9790;</span>
           </button>
-          <button id="new-game-button" class="command-button" type="button">New game</button>
+          <button id="new-game-button" class="command-button" type="button" disabled>New game</button>
         </div>
       </header>
 
@@ -40,10 +41,38 @@
             <p id="status-message" class="status-message" aria-live="polite"></p>
           </section>
 
+          <section class="opponent-controls" aria-label="Opponent settings">
+            <label class="panel-label" for="game-mode">GAME MODE</label>
+            <select id="game-mode" disabled>
+              <option value="human">Human vs Human</option>
+              <option value="ai">Human vs AI (NN + MCTS)</option>
+              <option value="pikafish">Human vs Pikafish</option>
+            </select>
+            <div id="ai-settings" class="opponent-controls" hidden>
+              <div id="model-fields">
+                <label class="panel-label" for="ai-model">MODEL FROM models/</label>
+                <select id="ai-model" disabled></select>
+                <button id="refresh-models" class="secondary-button" type="button" disabled>Refresh models</button>
+                <p id="model-hint" class="coord-hint" aria-live="polite"></p>
+              </div>
+              <label class="panel-label" for="human-color">YOUR COLOR</label>
+              <select id="human-color" disabled>
+                <option value="red">Red (you move first)</option>
+                <option value="black">Black (AI moves first)</option>
+              </select>
+              <label class="panel-label" id="search-label" for="mcts-simulations">MCTS SIMULATIONS</label>
+              <input id="mcts-simulations" type="number" min="1" max="400" step="1" value="16" disabled>
+              <p id="search-hint" class="coord-hint">Start with 16. More simulations are slower. CUDA is used when available.</p>
+            </div>
+            <p class="coord-hint">Choose settings, then click New game.</p>
+            <p id="opponent-label" class="coord-hint"></p>
+            <button id="retry-ai-button" class="secondary-button" type="button" hidden>Retry AI move</button>
+          </section>
+
           <section class="coord-panel">
             <p class="panel-label">SELECTED COORDINATE</p>
             <p id="selected-coord" class="coord-value">-</p>
-            <p class="coord-hint">Rows 0-9, cols 0-8 (red at top).</p>
+            <p class="coord-hint">Rows 0-9, cols 0-8 (red at bottom).</p>
           </section>
 
           <dl class="game-metrics">
@@ -65,7 +94,7 @@
       </section>
     </main>
 
-    <script src="/app.js"></script>
+    <script type="module" src="/app.js"></script>
     <script>
       // Apply persisted theme before paint to avoid a flash of the wrong palette.
       (function () {
