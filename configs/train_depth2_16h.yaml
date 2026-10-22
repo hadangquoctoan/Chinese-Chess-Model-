@@ -1,4 +1,4 @@
-# 16-hour rented-server run: small net, sparring vs Pikafish.
+# 15-hour rented-server run: small net, sparring vs Pikafish.
 # Time limits are enforced by scripts/run_16h.py, not by num_iterations.
 
 model:

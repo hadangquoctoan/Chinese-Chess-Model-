@@ -1,6 +1,6 @@
 # Laptop overnight: Quadro RTX 3000 6GB, 32GB DDR4, i7-9850H.
 # Budget is enforced by scripts/run_laptop_8h.py (default 8 hours), not num_iterations.
-# Output paths stay under models/laptop_8h so a rented 16h run is never mixed in.
+# Output paths stay under models/laptop_8h so a rented 15h run is never mixed in.
 
 model:
   size: small

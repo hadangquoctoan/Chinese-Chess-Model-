@@ -1,4 +1,4 @@
-# 16-hour Windows GPU server run: same budget as train_depth2_16h.yaml.
+# 15-hour Windows GPU server run: same budget as train_depth2_16h.yaml.
 # Tuned for an RTX 3090 24GB / 25-core Xeon: 8 self-play processes and
 # fewer full-replay checkpoints. Time limits are enforced by scripts/run_16h.py.
 

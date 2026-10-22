@@ -1,4 +1,4 @@
-"""Orchestrate labels, pretrain, 9h snapshot, then train until hour 16."""
+"""Orchestrate labels, pretrain, 9h snapshot, then train until hour 15."""
 import argparse
 import os
 from pathlib import Path
@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 HOUR = 3600
 SNAPSHOT_HOURS = 9
-HARD_LIMIT_HOURS = 16
+HARD_LIMIT_HOURS = 15
 FINAL_MEASURE_SECONDS = 30 * 60
 DEFAULT_CONFIG = "configs/train_depth2_16h.yaml"
 TEACHER_NPZ = Path("data") / "teacher_labels" / "teacher_depth2.npz"
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> None:
     os.chdir(root)
     start = time.monotonic()
     deadline_9h = start + SNAPSHOT_HOURS * HOUR
-    deadline_16h = start + HARD_LIMIT_HOURS * HOUR
+    deadline_end = start + HARD_LIMIT_HOURS * HOUR
 
     _run([python, str(root / "scripts" / "build_teacher_labels.py"),
           "--output", str(TEACHER_NPZ), "--num-positions", str(args.num_positions),
@@ -74,12 +74,12 @@ def main(argv: list[str] | None = None) -> None:
     measure = [python, str(root / "scripts" / "measure_vs_pikafish.py"),
                "--model", str(SNAPSHOT_PT), "--games", str(args.measure_games),
                "--mcts-sims", str(args.mcts_sims)]
-    if _remaining(deadline_16h) > 0:
+    if _remaining(deadline_end) > 0:
         _run(measure + ["--depth", "1"])
-    if _remaining(deadline_9h) > 15 * 60 and _remaining(deadline_16h) > 0:
+    if _remaining(deadline_9h) > 15 * 60 and _remaining(deadline_end) > 0:
         _run(measure + ["--depth", "2"])
 
-    train_until = deadline_16h - FINAL_MEASURE_SECONDS
+    train_until = deadline_end - FINAL_MEASURE_SECONDS
     second_budget = max(0.0, train_until - time.monotonic())
     if second_budget > 0 and PROGRESS_PT.is_file():
         _run([python, str(root / "scripts" / "train.py"), "--config", args.config,
@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> None:
         _run([python, str(root / "scripts" / "measure_vs_pikafish.py"),
               "--model", final_model, "--games", str(args.measure_games),
               "--depth", "2", "--mcts-sims", str(args.mcts_sims)])
-    print("16h orchestration finished", flush=True)
+    print(f"{HARD_LIMIT_HOURS}h orchestration finished", flush=True)
 
 
 if __name__ == "__main__":
