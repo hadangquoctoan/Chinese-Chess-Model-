@@ -1,6 +1,6 @@
 # 16-hour Windows GPU server run: same budget as train_depth2_16h.yaml.
-# Only sparring.engine_path differs (Windows Pikafish build).
-# Time limits are enforced by scripts/run_16h.py, not by num_iterations.
+# Tuned for an RTX 3090 24GB / 25-core Xeon: 8 self-play processes and
+# fewer full-replay checkpoints. Time limits are enforced by scripts/run_16h.py.
 
 model:
   size: small
@@ -22,7 +22,7 @@ self_play:
   temperature_threshold: 15
   dirichlet_alpha: 0.3
   dirichlet_epsilon: 0.25
-  parallel_workers: 1
+  parallel_workers: 8
   max_game_plies: 200
   no_capture_limit: 100
 
@@ -37,8 +37,8 @@ training_loop:
   evaluation_mcts_simulations: 80
   evaluation_opening_plies: 4
   evaluation_opening_seed: 0
-  checkpoint_every: 1
-  auto_checkpoint_interval: 600
+  checkpoint_every: 5
+  auto_checkpoint_interval: 1800
   early_stopping_patience: 0
 
 optimization:

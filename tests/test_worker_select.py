@@ -177,6 +177,25 @@ def test_train_laptop_8h_yaml_fits_rtx3000_and_windows_engine():
         validate_session_config(config)
 
 
+def test_train_depth2_16h_windows_config_uses_windows_engine_and_parallel_workers():
+    from pathlib import Path
+
+    import yaml
+
+    from src.training.sparring_config import validate_sparring_config
+
+    config = yaml.safe_load(
+        Path("configs/train_depth2_16h_windows.yaml").read_text(encoding="utf-8"))
+    assert config["self_play"]["parallel_workers"] == 8
+    assert config["training_loop"]["checkpoint_every"] == 5
+    assert config["training_loop"]["auto_checkpoint_interval"] == 1800
+    engine = Path(config["sparring"]["engine_path"])
+    assert engine.name == "Pikafish-Windows-x86-64-universal.exe"
+    if engine.is_file():
+        validated = validate_sparring_config(config["sparring"])
+        assert validated["engine_path"].endswith(engine.name)
+
+
 def test_enabled_with_existing_engine_accepted(tmp_path):
     binary = tmp_path / "pikafish"
     binary.write_bytes(b"x")

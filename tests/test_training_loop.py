@@ -191,11 +191,57 @@ def test_checkpoint_every_and_early_stopping_stop_actual_iterations(tmp_path):
     assert final['iteration'] == 3
 
 
-def test_unsupported_parallel_workers_rejected_before_start(tmp_path):
+@pytest.mark.parametrize('value', [0, -1, 17, True, '2', 2.5])
+def test_invalid_parallel_workers_rejected_before_start(tmp_path, value):
     config = settings(tmp_path)
-    config['self_play']['parallel_workers'] = 2
+    config['self_play']['parallel_workers'] = value
     with pytest.raises(ValueError, match='parallel_workers'):
         session(config)
+
+
+class FakeParallelRunner:
+    closed = 0
+    options = None
+
+    def __init__(self, model, options, workers):
+        self.options = options
+        self.workers = workers
+
+    def submit(self, seed):
+        class Completed:
+            def result(self):
+                return ([torch.zeros(19, 10, 9)],
+                        [torch.ones(1800) / 1800], 0.)
+        return Completed()
+
+    def close(self):
+        FakeParallelRunner.closed += 1
+
+
+def test_parallel_workers_play_a_batch_per_advance(tmp_path):
+    config = settings(tmp_path)
+    config['self_play'].update(num_games_per_iteration=4, parallel_workers=2)
+    FakeParallelRunner.closed = 0
+    run = session(config, runner_factory=FakeParallelRunner)
+    run.start()
+    run.advance()
+    assert run.games_completed == 2
+    assert len(run.replay_buffer.games) == 2
+    assert run.phase == 'self_play'
+    run.advance()
+    assert run.games_completed == 4
+    assert len(run.replay_buffer.games) == 4
+    assert run.phase == 'train'
+    assert run._self_play_runner is None
+    assert FakeParallelRunner.closed == 1
+
+
+def test_iteration_settings_record_parallel_workers(tmp_path):
+    from src.training.pipeline import iteration_settings
+
+    config = settings(tmp_path)
+    config['self_play']['parallel_workers'] = 4
+    assert iteration_settings(config)['self_play']['parallel_workers'] == 4
 
 
 def test_options_propagate_to_real_trainer_worker_and_evaluator(tmp_path):

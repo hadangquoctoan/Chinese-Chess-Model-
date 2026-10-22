@@ -20,6 +20,7 @@ from .sparring_depth import choose_sparring_depth
 from .worker_select import choose_worker_for_game
 
 _LOGGER = logging.getLogger('ChineseChessAI')
+MAX_PARALLEL_WORKERS = 16
 
 
 def _empty_sparring_record() -> dict[int, dict[str, int]]:
@@ -261,7 +262,9 @@ def iteration_settings(config: dict[str, Any]) -> dict[str, Any]:
     """Record budgets whose changes could corrupt a partially resumed iteration."""
     loop = config['training_loop']
     sparring = validate_sparring_config(config.get('sparring'))
-    return {'self_play': {**config['self_play'], **rules_limits(config), 'parallel_workers': 1},
+    workers = config['self_play'].get('parallel_workers', 1)
+    return {'self_play': {**config['self_play'], **rules_limits(config),
+                          'parallel_workers': workers},
             'samples_per_iteration': loop['samples_per_iteration'],
             'evaluation_games': loop['evaluation_games'],
             'evaluation_mcts_simulations': loop.get('evaluation_mcts_simulations', 200),
@@ -280,8 +283,10 @@ def validate_session_config(config: dict[str, Any]) -> None:
         if unknown:
             raise ValueError(f'Unsupported {section} options: {sorted(unknown)}')
     validate_output_paths(config)
-    if config['self_play'].get('parallel_workers', 1) != 1:
-        raise ValueError('self_play.parallel_workers must be 1; parallel self-play is not implemented')
+    workers = config['self_play'].get('parallel_workers', 1)
+    if type(workers) is not int or not 1 <= workers <= MAX_PARALLEL_WORKERS:
+        raise ValueError(
+            f'self_play.parallel_workers must be an integer in [1, {MAX_PARALLEL_WORKERS}]')
     loop = config['training_loop']
     for key in ('num_iterations', 'samples_per_iteration', 'evaluation_games', 'checkpoint_every'):
         value = loop.get(key, 5) if key == 'checkpoint_every' else loop[key]
@@ -338,7 +343,8 @@ class TrainingSession:
                  worker_factory: Callable = SelfPlayWorker,
                  evaluator: Any = None,
                  clock: Callable[[], float] = time.monotonic,
-                 fresh_paths_checked: bool = False) -> None:
+                 fresh_paths_checked: bool = False,
+                 runner_factory: Callable | None = None) -> None:
         validate_session_config(config)
         self.trainer = trainer
         self.replay_buffer = replay_buffer
@@ -361,6 +367,8 @@ class TrainingSession:
         self.games_completed = 0
         self.pending_losses = []
         self._worker = None
+        self._self_play_runner = None
+        self.runner_factory = runner_factory
         self._sparring_player = None
         self._opponent_is_red = False
         self._sparring_record = _empty_sparring_record()
@@ -435,8 +443,26 @@ class TrainingSession:
                 if key not in ('num_games_per_iteration', 'parallel_workers')}
 
     def close(self) -> None:
-        """Close a persistent Pikafish subprocess if one is open."""
+        """Close the self-play pool and any persistent Pikafish subprocess."""
+        self._close_self_play_runner()
         self._close_sparring_player()
+
+    def _close_self_play_runner(self) -> None:
+        runner = self._self_play_runner
+        self._self_play_runner = None
+        if runner is not None:
+            runner.close()
+
+    def _ensure_self_play_runner(self):
+        if self._self_play_runner is None:
+            workers = self.config['self_play'].get('parallel_workers', 1)
+            factory = self.runner_factory
+            if factory is None:
+                from .parallel_self_play import ParallelSelfPlayRunner
+                factory = ParallelSelfPlayRunner
+            self._self_play_runner = factory(
+                self.best_model, self._self_play_options(), workers)
+        return self._self_play_runner
 
     def _close_sparring_player(self) -> None:
         player = self._sparring_player
@@ -477,15 +503,7 @@ class TrainingSession:
                          r1['wins'], r1['losses'], r2['wins'], r2['losses'])
         self._iteration_sparring = _empty_sparring_record()
 
-    def _play_generation_game(self) -> None:
-        sparring = validate_sparring_config(self.config.get('sparring'))
-        options = self._self_play_options()
-        kind = choose_worker_for_game(random, sparring['ratio'], sparring['enabled'])
-        if kind != 'sparring':
-            if self._worker is None:
-                self._worker = self.worker_factory(model=self.best_model, **options)
-            self.replay_buffer.add_game(*self._worker.play_game(verbose=False))
-            return
+    def _play_sparring_game(self) -> tuple[list[np.ndarray], list[np.ndarray], float]:
         from .sparring_game import SparringWorker
         player = self._ensure_sparring_player()
         depth = choose_sparring_depth(
@@ -494,21 +512,67 @@ class TrainingSession:
         player.depth = depth
         opponent_is_red = self._opponent_is_red
         worker = SparringWorker(model=self.best_model, opponent=player,
-                                opponent_is_red=opponent_is_red, **options)
+                                opponent_is_red=opponent_is_red,
+                                **self._self_play_options())
         states, policies, winner = worker.play_game(verbose=False)
-        self.replay_buffer.add_game(states, policies, winner)
         self._log_sparring_game(depth, opponent_is_red, winner, len(states))
         self._opponent_is_red = not opponent_is_red
+        return states, policies, winner
+
+    def _play_generation_game(self) -> None:
+        sparring = validate_sparring_config(self.config.get('sparring'))
+        kind = choose_worker_for_game(random, sparring['ratio'], sparring['enabled'])
+        if kind != 'sparring':
+            if self._worker is None:
+                self._worker = self.worker_factory(
+                    model=self.best_model, **self._self_play_options())
+            self.replay_buffer.add_game(*self._worker.play_game(verbose=False))
+            return
+        self.replay_buffer.add_game(*self._play_sparring_game())
+
+    def _play_generation_batch(self) -> None:
+        """Play up to ``parallel_workers`` games, overlapping GPU and Pikafish work."""
+        total = self.config['self_play']['num_games_per_iteration']
+        workers = self.config['self_play'].get('parallel_workers', 1)
+        count = min(workers, total - self.games_completed)
+        sparring = validate_sparring_config(self.config.get('sparring'))
+        kinds = [choose_worker_for_game(random, sparring['ratio'], sparring['enabled'])
+                 for _ in range(count)]
+        self_play_positions = [index for index, kind in enumerate(kinds)
+                               if kind != 'sparring']
+        runner = self._ensure_self_play_runner() if self_play_positions else None
+        futures = []
+        if runner is not None:
+            futures = [(index, runner.submit(random.getrandbits(32)))
+                       for index in self_play_positions]
+        results: dict[int, tuple] = {}
+        for index, kind in enumerate(kinds):
+            if kind == 'sparring':
+                results[index] = self._play_sparring_game()
+        for index, future in futures:
+            results[index] = future.result()
+        for index in range(count):
+            self.replay_buffer.add_game(*results[index])
+        self.games_completed += count
+        if self.games_completed == total:
+            self._finish_generation_phase()
+
+    def _finish_generation_phase(self) -> None:
+        self._log_sparring_record()
+        self._close_sparring_player()
+        self._close_self_play_runner()
+        self.phase = 'train'
 
     def advance(self) -> dict[str, Any] | None:
-        """Execute one whole game, epoch, or evaluation and checkpoint if due."""
+        """Execute one whole game or batch, epoch, or evaluation and checkpoint if due."""
         if self.phase == 'self_play':
-            self._play_generation_game()
-            self.games_completed += 1
-            if self.games_completed == self.config['self_play']['num_games_per_iteration']:
-                self._log_sparring_record()
-                self._close_sparring_player()
-                self.phase = 'train'
+            if self.config['self_play'].get('parallel_workers', 1) > 1:
+                self._play_generation_batch()
+            else:
+                self._play_generation_game()
+                self.games_completed += 1
+                if self.games_completed == self.config['self_play']['num_games_per_iteration']:
+                    self._finish_generation_phase()
         elif self.phase == 'train':
             self.pending_losses = list(self.trainer.train_epoch(
                 self.replay_buffer, self.config['training_loop']['samples_per_iteration']))
@@ -576,5 +640,6 @@ class TrainingSession:
         self.games_completed = 0
         self.pending_losses = []
         self._worker = None
+        self._close_self_play_runner()
         self._close_sparring_player()
         return metrics
