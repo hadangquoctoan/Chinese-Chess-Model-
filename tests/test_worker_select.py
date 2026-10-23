@@ -227,7 +227,8 @@ def test_train_server_fast_linux_config_uses_linux_engine():
 
     config = yaml.safe_load(
         Path("configs/train_server_fast_linux.yaml").read_text(encoding="utf-8"))
-    assert config["self_play"]["parallel_workers"] == 12
+    assert config["self_play"]["parallel_workers"] == 16
+    assert config["self_play"]["max_game_plies"] == 120
     assert config["self_play"]["mcts_simulations"] == 64
     engine = Path(config["sparring"]["engine_path"])
     assert engine.name == "Pikafish-Linux-x86-64-universal"

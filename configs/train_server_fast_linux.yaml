@@ -1,5 +1,5 @@
-# Fast server run for Ubuntu/Linux; same budgets as train_server_fast.yaml.
-# Engine path points at the bundled Linux Pikafish binary.
+# Fast server run for Ubuntu/Linux; shortened games and all 16 self-play
+# workers keep CPU-bound MCTS iterations practical.
 
 model:
   size: small
@@ -21,8 +21,8 @@ self_play:
   temperature_threshold: 15
   dirichlet_alpha: 0.3
   dirichlet_epsilon: 0.25
-  parallel_workers: 12
-  max_game_plies: 200
+  parallel_workers: 16
+  max_game_plies: 120
   no_capture_limit: 100
 
 replay_buffer:
