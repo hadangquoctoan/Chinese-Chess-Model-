@@ -23,6 +23,13 @@ DEFAULT_DEPTH = 2
 DEFAULT_THREADS = 8
 DEFAULT_HASH_MB = 1024
 MAX_RANDOM_PLIES = 80
+MAX_TACTICAL_PROBES = 100
+
+
+def _append_probe(probes, probe, limit: int = MAX_TACTICAL_PROBES) -> None:
+    """Keep the tactical probe file small enough for a practical benchmark."""
+    if len(probes) < limit:
+        probes.append(probe)
 
 
 def _capture_value(board, move) -> float:
@@ -66,7 +73,7 @@ def generate_positions(engine: PikafishEngine, num_positions: int, depth: int,
                 values.append(value)
                 if capture >= 4.0:
                     history = tuple(tuple(record[:4]) for record in game.move_history)
-                    probes.append((state, history, move, capture))
+                    _append_probe(probes, (state, history, move, capture))
             legal = game.get_legal_moves()
             if not legal:
                 break
