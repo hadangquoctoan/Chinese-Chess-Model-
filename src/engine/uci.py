@@ -37,7 +37,7 @@ class PikafishEngine:
 
     def __init__(self, path: Path | None = None, threads: int = 2,
                  hash_mb: int = 64) -> None:
-        self.path = Path(path) if path else find_engine_binary()
+        self.path = (Path(path) if path else find_engine_binary()).resolve()
         if not self.path.is_file():
             raise FileNotFoundError(f"Pikafish binary not found: {self.path}")
         self._queue: Queue[str | None] = Queue()

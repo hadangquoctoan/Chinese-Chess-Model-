@@ -1,4 +1,7 @@
 """Coordinate/FEN conversion and Pikafish move validation against project Rules."""
+import io
+from pathlib import Path
+
 import pytest
 
 from src.engine.coordinates import FLIP_RANK, move_to_uci, parse_uci_move
@@ -136,3 +139,43 @@ def test_player_rejects_move_that_would_capture_a_general():
     game.reset_history()
     with pytest.raises(ValueError, match="not legal"):
         PikafishPlayer(FakeEngine("e8e9"), depth=1).choose_move(game)
+
+
+class _FakeProcess:
+    def __init__(self) -> None:
+        self.stdout = io.StringIO()
+        self.stdin = io.StringIO()
+
+    def poll(self):
+        return None
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self) -> None:
+        return None
+
+
+def test_relative_engine_path_is_resolved_before_launch(monkeypatch):
+    """Popen runs with cwd=pikafish/, so a relative engine path would be doubled."""
+    from src.engine import uci
+
+    monkeypatch.chdir(uci.ENGINE_DIR.parent)
+    launches = []
+
+    def fake_popen(args, **kwargs):
+        launches.append((args, kwargs))
+        return _FakeProcess()
+
+    monkeypatch.setattr(uci.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(uci.PikafishEngine, "_send", lambda self, command: None)
+    monkeypatch.setattr(
+        uci.PikafishEngine, "_wait_for",
+        lambda self, token, timeout, prefix=False: token)
+    relative = Path("pikafish") / uci.NNUE_NAME
+    engine = uci.PikafishEngine(path=relative)
+    try:
+        assert launches[0][0] == [str(uci.ENGINE_DIR / uci.NNUE_NAME)]
+        assert launches[0][1]["cwd"] == str(uci.ENGINE_DIR)
+    finally:
+        engine.close()
