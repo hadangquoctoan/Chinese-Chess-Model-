@@ -9,17 +9,11 @@ from ..engine.player import PikafishPlayer
 from ..game.game_state import GameState
 from ..model.mcts import MCTS
 from ..model.neural_network import ChineseChessNet
+from .adjudication import adjudicated_winner
 from .self_play import GREEDY_TEMPERATURE, MAX_GAME_PLIES
 from .teacher_label import build_teacher_label
 
 GameData = Tuple[List[np.ndarray], List[np.ndarray], float]
-
-
-def _red_centric_winner(game_state: GameState) -> float:
-    winner_bool = game_state.get_winner()
-    if winner_bool is None:
-        return 0.0
-    return 1.0 if winner_bool else -1.0
 
 
 def _one_hot_policy(game_state: GameState, move) -> np.ndarray:
@@ -34,6 +28,8 @@ def play_sparring_game(model: ChineseChessNet, opponent: PikafishPlayer,
                        dirichlet_alpha: float = 0.3, dirichlet_epsilon: float = 0.25,
                        max_game_plies: int = MAX_GAME_PLIES,
                        no_capture_limit: int = 100,
+                       adjudication_margin: float = 0.0,
+                       opening_moves: tuple = (),
                        verbose: bool = False) -> GameData:
     """Play one MCTS-vs-Pikafish game and keep every ply, including the opponent's.
 
@@ -41,6 +37,9 @@ def play_sparring_game(model: ChineseChessNet, opponent: PikafishPlayer,
     values by ply index ``i % 2`` (red always starts).
     """
     game_state = GameState(max_plies=max_game_plies, no_capture_limit=no_capture_limit)
+    for move in opening_moves:
+        if game_state.is_terminal() or not game_state.make_move(*move):
+            raise ValueError(f"Invalid sparring opening move: {move}")
     mcts = MCTS(model, num_simulations=mcts_simulations,
                 dirichlet_alpha=dirichlet_alpha, dirichlet_epsilon=dirichlet_epsilon)
     states: List[np.ndarray] = []
@@ -68,7 +67,8 @@ def play_sparring_game(model: ChineseChessNet, opponent: PikafishPlayer,
             notation = game_state.get_move_notation(*move)
             print(f"Move {move_count + 1}: {notation}")
         move_count += 1
-    winner = _red_centric_winner(game_state)
+    winner_bool = adjudicated_winner(game_state, adjudication_margin)
+    winner = 0.0 if winner_bool is None else (1.0 if winner_bool else -1.0)
     if verbose:
         print(f"Game ended after {move_count} moves. Result: {winner}")
     return states, policies, winner
@@ -81,11 +81,16 @@ class SparringWorker:
                  opponent_is_red: bool, mcts_simulations: int = 400,
                  temperature: float = 1.0, temperature_threshold: int = 15,
                  dirichlet_alpha: float = 0.3, dirichlet_epsilon: float = 0.25,
-                 max_game_plies: int = MAX_GAME_PLIES, no_capture_limit: int = 100):
+                 max_game_plies: int = MAX_GAME_PLIES, no_capture_limit: int = 100,
+                 adjudication_margin: float = 0.0, opening_moves: tuple = ()):
         if not math.isfinite(temperature) or temperature < 0:
             raise ValueError("temperature must be finite and non-negative")
         if temperature_threshold < 0:
             raise ValueError("temperature_threshold cannot be negative")
+        if isinstance(adjudication_margin, bool) or not isinstance(adjudication_margin, (int, float)):
+            raise ValueError("adjudication_margin must be a finite number")
+        if not math.isfinite(adjudication_margin) or adjudication_margin < 0:
+            raise ValueError("adjudication_margin must be finite and non-negative")
         self.model = model
         self.opponent = opponent
         self.opponent_is_red = opponent_is_red
@@ -96,6 +101,8 @@ class SparringWorker:
         self.dirichlet_epsilon = dirichlet_epsilon
         self.max_game_plies = max_game_plies
         self.no_capture_limit = no_capture_limit
+        self.adjudication_margin = adjudication_margin
+        self.opening_moves = tuple(opening_moves)
         self.last_termination_reason = "Game in progress"
 
     def play_game(self, verbose: bool = False) -> GameData:
@@ -106,6 +113,7 @@ class SparringWorker:
             temperature_threshold=self.temperature_threshold,
             dirichlet_alpha=self.dirichlet_alpha, dirichlet_epsilon=self.dirichlet_epsilon,
             max_game_plies=self.max_game_plies, no_capture_limit=self.no_capture_limit,
-            verbose=verbose)
+            adjudication_margin=self.adjudication_margin,
+            opening_moves=self.opening_moves, verbose=verbose)
         self.last_termination_reason = f"plies {len(states)}"
         return states, policies, winner

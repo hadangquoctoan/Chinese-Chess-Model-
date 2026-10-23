@@ -348,6 +348,30 @@ def test_changed_mid_iteration_game_budget_rejected_on_resume(tmp_path):
         restored.start(resume=str(path))
 
 
+def test_summarize_self_play_counts_results_and_plies():
+    from src.training.pipeline import summarize_self_play
+
+    summary = summarize_self_play([
+        ([0, 0], None, 1.0),
+        ([0, 0, 0], None, -1.0),
+        ([0, 0, 0, 0], None, 0.0),
+    ])
+    assert summary == {'games': 3, 'red': 1, 'black': 1, 'draws': 1,
+                       'average_plies': 3.0}
+
+
+def test_batch_logs_self_play_summary(tmp_path, caplog):
+    import logging
+
+    config = settings(tmp_path)
+    config['self_play'].update(num_games_per_iteration=4, parallel_workers=2)
+    run = session(config, runner_factory=FakeParallelRunner)
+    run.start()
+    with caplog.at_level(logging.INFO, logger='ChineseChessAI'):
+        run.advance()
+    assert 'self-play batch' in caplog.text
+
+
 def test_explicit_score_threshold_promotes_candidate(tmp_path):
     config = settings(tmp_path)
     del config['training_loop']['win_rate_threshold']
@@ -358,6 +382,26 @@ def test_explicit_score_threshold_promotes_candidate(tmp_path):
     assert metric['accepted']
     assert run.best_model.weight.item() == 2.
     assert run.trainer.saved_models == 2
+
+
+class ParityEvaluator:
+    def evaluate(self, **kwargs):
+        return (.5, 0, 0, 2)
+
+
+def test_score_equal_to_threshold_promotes_candidate(tmp_path):
+    from src.training.pipeline import TrainingSession
+
+    config = settings(tmp_path)
+    del config['training_loop']['win_rate_threshold']
+    config['training_loop']['score_threshold'] = .5
+    run = TrainingSession(
+        TinyTrainer(), TinyReplay(), config,
+        worker_factory=ControlledWorker, evaluator=ParityEvaluator())
+    run.start()
+    metric = run.run_iteration()
+    assert metric['accepted'] is True
+    assert run.best_model.weight.item() == 2.
 
 
 def test_unknown_or_retired_configuration_options_are_rejected(tmp_path):

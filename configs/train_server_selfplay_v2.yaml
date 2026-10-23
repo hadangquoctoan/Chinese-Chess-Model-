@@ -1,0 +1,58 @@
+# Self-play quality run for Ubuntu/Linux; fresh paths, 120-ply games.
+model:
+  size: small
+  num_residual_blocks: 5
+  num_channels: 128
+  policy_channels: 16
+  value_channels: 2
+
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 1024
+  use_amp: true
+
+self_play:
+  num_games_per_iteration: 16
+  mcts_simulations: 96
+  temperature: 1.0
+  temperature_threshold: 30
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  parallel_workers: 16
+  max_game_plies: 120
+  no_capture_limit: 100
+  adjudication_margin: 3.0
+
+replay_buffer:
+  max_size: 50000
+
+training_loop:
+  num_iterations: 200
+  samples_per_iteration: 8000
+  evaluation_games: 6
+  score_threshold: 0.5
+  evaluation_mcts_simulations: 24
+  evaluation_opening_plies: 4
+  evaluation_opening_seed: 0
+  checkpoint_every: 5
+  auto_checkpoint_interval: 1800
+  early_stopping_patience: 0
+
+optimization:
+  num_workers: 4
+  max_batch_size: 1024
+  gradient_accumulation_steps: 1
+
+paths:
+  checkpoint_dir: models/server_v2/checkpoints
+  best_model_path: models/server_v2/best_model.pt
+  log_dir: logs/server_v2
+
+sparring:
+  enabled: true
+  ratio: 0.3
+  depth: 1
+  threads: 4
+  hash_mb: 256
+  engine_path: pikafish/Pikafish-Linux-x86-64-universal

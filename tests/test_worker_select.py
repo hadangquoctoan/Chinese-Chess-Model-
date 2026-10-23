@@ -218,6 +218,25 @@ def test_train_server_fast_config_uses_light_cpu_bound_budget():
         validate_sparring_config(config["sparring"])
 
 
+def test_train_server_selfplay_v2_config():
+    from pathlib import Path
+
+    import yaml
+
+    from src.training.pipeline import validate_session_config
+
+    config = yaml.safe_load(
+        Path("configs/train_server_selfplay_v2.yaml").read_text(encoding="utf-8"))
+    assert config["self_play"]["adjudication_margin"] == 3.0
+    assert config["self_play"]["mcts_simulations"] == 96
+    assert config["self_play"]["temperature_threshold"] == 30
+    assert config["self_play"]["parallel_workers"] == 16
+    assert config["training_loop"]["evaluation_games"] == 6
+    assert config["training_loop"]["score_threshold"] == 0.5
+    assert config["paths"]["best_model_path"] == "models/server_v2/best_model.pt"
+    validate_session_config(config)
+
+
 def test_train_server_fast_linux_config_uses_linux_engine():
     from pathlib import Path
 

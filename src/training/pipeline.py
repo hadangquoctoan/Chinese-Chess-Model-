@@ -23,6 +23,19 @@ _LOGGER = logging.getLogger('ChineseChessAI')
 MAX_PARALLEL_WORKERS = 16
 
 
+def summarize_self_play(games: list[tuple]) -> dict[str, float]:
+    """Summarize red/black/draw outcomes and average plies for one batch."""
+    if not games:
+        return {'games': 0, 'red': 0, 'black': 0, 'draws': 0,
+                'average_plies': 0.0}
+    red = sum(1 for _, _, winner in games if winner == 1.0)
+    black = sum(1 for _, _, winner in games if winner == -1.0)
+    plies = sum(len(states) for states, _, _ in games)
+    return {'games': len(games), 'red': red, 'black': black,
+            'draws': len(games) - red - black,
+            'average_plies': plies / len(games)}
+
+
 def _empty_sparring_record() -> dict[int, dict[str, int]]:
     return {1: {'wins': 0, 'losses': 0, 'draws': 0, 'games': 0},
             2: {'wins': 0, 'losses': 0, 'draws': 0, 'games': 0}}
@@ -237,7 +250,8 @@ CONFIG_FIELDS = {
     'training': {'learning_rate', 'weight_decay', 'batch_size', 'use_amp'},
     'self_play': {'num_games_per_iteration', 'mcts_simulations', 'temperature',
                   'temperature_threshold', 'dirichlet_alpha', 'dirichlet_epsilon',
-                  'parallel_workers', 'max_game_plies', 'no_capture_limit'},
+                  'parallel_workers', 'max_game_plies', 'no_capture_limit',
+                  'adjudication_margin'},
     'replay_buffer': {'max_size'},
     'training_loop': {'num_iterations', 'samples_per_iteration', 'evaluation_games',
                       'score_threshold', 'win_rate_threshold', 'checkpoint_every',
@@ -320,6 +334,11 @@ def _validate_search_options(config: dict[str, Any]) -> None:
                 (loop.get('evaluation_opening_plies', 4), 0)]
     if any(type(value) is not int or value < minimum for value, minimum in integers):
         raise ValueError('Search simulation/ply budgets must be valid integers')
+    margin = self_play.get('adjudication_margin', 0.)
+    if isinstance(margin, bool) or not isinstance(margin, (int, float)):
+        raise ValueError('self_play.adjudication_margin must be a finite number')
+    if not math.isfinite(margin) or margin < 0:
+        raise ValueError('self_play.adjudication_margin must be finite and non-negative')
     if type(loop.get('evaluation_opening_seed', 0)) is not int:
         raise ValueError('evaluation_opening_seed must be an integer')
     for key, default, minimum, maximum in [('temperature', 1., 0., math.inf),
@@ -551,6 +570,14 @@ class TrainingSession:
                 results[index] = self._play_sparring_game()
         for index, future in futures:
             results[index] = future.result()
+        self_play_games = [results[index] for index, kind in enumerate(kinds)
+                           if kind != 'sparring']
+        summary = summarize_self_play(self_play_games)
+        if summary['games']:
+            _LOGGER.info(
+                'self-play batch | games %s | red/black/draw %s/%s/%s | avg plies %.1f',
+                summary['games'], summary['red'], summary['black'],
+                summary['draws'], summary['average_plies'])
         for index in range(count):
             self.replay_buffer.add_game(*results[index])
         self.games_completed += count
@@ -623,7 +650,7 @@ class TrainingSession:
         score, wins, losses_count, draws = self.evaluator.evaluate(
             new_model=self.trainer.model, best_model=self.best_model,
             num_games=loop['evaluation_games'], verbose=False)
-        accepted = score > score_threshold(self.config)
+        accepted = score >= score_threshold(self.config)
         if accepted:
             self.best_model.load_state_dict(self.trainer.model.state_dict())
             self.best_score = score

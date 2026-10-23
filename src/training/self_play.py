@@ -7,6 +7,7 @@ from tqdm import tqdm
 from ..game.game_state import GameState
 from ..model.mcts import MCTS
 from ..model.neural_network import ChineseChessNet
+from .adjudication import adjudicated_winner
 
 GREEDY_TEMPERATURE = 0.1
 MAX_GAME_PLIES = 200
@@ -18,7 +19,8 @@ class SelfPlayWorker:
     def __init__(self, model: ChineseChessNet, mcts_simulations: int = 400,
                  temperature: float = 1.0, temperature_threshold: int = 15,
                  dirichlet_alpha: float = 0.3, dirichlet_epsilon: float = 0.25,
-                 max_game_plies: int = MAX_GAME_PLIES, no_capture_limit: int = 100):
+                 max_game_plies: int = MAX_GAME_PLIES, no_capture_limit: int = 100,
+                 adjudication_margin: float = 0.0):
         """
         Args:
             model: Neural network
@@ -30,6 +32,10 @@ class SelfPlayWorker:
             raise ValueError("temperature must be finite and non-negative")
         if temperature_threshold < 0:
             raise ValueError("temperature_threshold cannot be negative")
+        if isinstance(adjudication_margin, bool) or not isinstance(adjudication_margin, (int, float)):
+            raise ValueError("adjudication_margin must be a finite number")
+        if not math.isfinite(adjudication_margin) or adjudication_margin < 0:
+            raise ValueError("adjudication_margin must be finite and non-negative")
 
         self.model = model
         self.mcts_simulations = mcts_simulations
@@ -39,6 +45,7 @@ class SelfPlayWorker:
         self.dirichlet_epsilon = dirichlet_epsilon
         self.max_game_plies = max_game_plies
         self.no_capture_limit = no_capture_limit
+        self.adjudication_margin = adjudication_margin
         self.last_termination_reason = "Game in progress"
         GameState(max_plies=max_game_plies, no_capture_limit=no_capture_limit)
         MCTS(model, num_simulations=mcts_simulations, dirichlet_alpha=dirichlet_alpha,
@@ -95,7 +102,7 @@ class SelfPlayWorker:
 
         # Determine winner
         self.last_termination_reason = game_state.get_termination_reason()
-        winner_bool = game_state.get_winner()
+        winner_bool = adjudicated_winner(game_state, self.adjudication_margin)
         if winner_bool is None:
             winner = 0.0  # Draw
         elif winner_bool:
