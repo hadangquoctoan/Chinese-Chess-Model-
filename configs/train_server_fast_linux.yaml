@@ -1,0 +1,59 @@
+# Fast server run for Ubuntu/Linux; same budgets as train_server_fast.yaml.
+# Engine path points at the bundled Linux Pikafish binary.
+
+model:
+  size: small
+  num_residual_blocks: 5
+  num_channels: 128
+  policy_channels: 16
+  value_channels: 2
+
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 1024
+  use_amp: true
+
+self_play:
+  num_games_per_iteration: 16
+  mcts_simulations: 64
+  temperature: 1.0
+  temperature_threshold: 15
+  dirichlet_alpha: 0.3
+  dirichlet_epsilon: 0.25
+  parallel_workers: 12
+  max_game_plies: 200
+  no_capture_limit: 100
+
+replay_buffer:
+  max_size: 50000
+
+training_loop:
+  num_iterations: 200
+  samples_per_iteration: 8000
+  evaluation_games: 4
+  score_threshold: 0.55
+  evaluation_mcts_simulations: 24
+  evaluation_opening_plies: 4
+  evaluation_opening_seed: 0
+  checkpoint_every: 5
+  auto_checkpoint_interval: 1800
+  early_stopping_patience: 0
+
+optimization:
+  num_workers: 4
+  max_batch_size: 1024
+  gradient_accumulation_steps: 1
+
+paths:
+  checkpoint_dir: models/server_fast/checkpoints
+  best_model_path: models/server_fast/best_model.pt
+  log_dir: logs/server_fast
+
+sparring:
+  enabled: true
+  ratio: 0.3
+  depth: 1
+  threads: 4
+  hash_mb: 256
+  engine_path: pikafish/Pikafish-Linux-x86-64-universal

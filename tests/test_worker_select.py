@@ -218,6 +218,23 @@ def test_train_server_fast_config_uses_light_cpu_bound_budget():
         validate_sparring_config(config["sparring"])
 
 
+def test_train_server_fast_linux_config_uses_linux_engine():
+    from pathlib import Path
+
+    import yaml
+
+    from src.training.sparring_config import validate_sparring_config
+
+    config = yaml.safe_load(
+        Path("configs/train_server_fast_linux.yaml").read_text(encoding="utf-8"))
+    assert config["self_play"]["parallel_workers"] == 12
+    assert config["self_play"]["mcts_simulations"] == 64
+    engine = Path(config["sparring"]["engine_path"])
+    assert engine.name == "Pikafish-Linux-x86-64-universal"
+    if engine.is_file():
+        validate_sparring_config(config["sparring"])
+
+
 def test_enabled_with_existing_engine_accepted(tmp_path):
     binary = tmp_path / "pikafish"
     binary.write_bytes(b"x")
