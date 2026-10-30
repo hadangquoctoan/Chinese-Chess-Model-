@@ -2,7 +2,7 @@
 from typing import Optional
 
 from ..board import Board
-from ..rules import RULESET_VERSION, Rules
+from ..rules import RULESET_VERSION, Move, Rules
 from .move_history import MoveHistory
 from .position_tracker import PositionTracker
 from .repetition import adjudicate
@@ -17,10 +17,13 @@ class GameResult:
     @staticmethod
     def outcome(board: Board, is_red_turn: bool, move_history: MoveHistory,
                 position_tracker: PositionTracker, max_plies: int = MAX_GAME_PLIES,
-                no_capture_limit: int = NO_CAPTURE_DRAW_PLY_LIMIT) -> tuple:
-        """Return (terminal, winner, reason); invalid setups raise ValueError."""
+                no_capture_limit: int = NO_CAPTURE_DRAW_PLY_LIMIT, *,
+                legal_moves: Optional[list[Move]] = None) -> tuple:
+        """Return the outcome, optionally reusing legal moves for this position."""
         Rules.validate_position(board)
-        if not Rules.has_legal_move(board, is_red_turn):
+        has_moves = (bool(legal_moves) if legal_moves is not None
+                     else Rules.has_legal_move(board, is_red_turn))
+        if not has_moves:
             winner = not is_red_turn
             name = 'Red' if winner else 'Black'
             kind = 'Checkmate' if Rules.is_in_check(board, is_red_turn) else 'Stalemate'

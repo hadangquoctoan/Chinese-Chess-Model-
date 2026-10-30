@@ -67,7 +67,7 @@ def quick_demo() -> None:
     print("="*60)
     print("\nNext steps:")
     print("1. Run tests: python tests/test_game.py")
-    print("2. Train on Colab: Open notebooks/02_training_colab.ipynb")
+    print("2. Supervised pipeline smoke: python scripts/run_supervised.py --smoke")
     print("3. Play against AI: python scripts/play_cli.py --model models/best_model.pt")
 
 if __name__ == '__main__':

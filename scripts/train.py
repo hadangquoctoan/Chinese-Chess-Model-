@@ -32,15 +32,16 @@ def load_config(config_path: str) -> dict[str, Any]:
 
 
 def build_model_config(config: dict[str, Any]) -> ModelConfig:
-    """Combine architecture presets with explicit model and training settings."""
+    """Combine presets and training settings; ``rules`` overrides ``self_play``."""
     model_config = ModelConfig.from_size(config['model']['size'])
     for field in MODEL_CONFIG_FIELDS:
         if field in config['model']:
             setattr(model_config, field, config['model'][field])
     for field in ('learning_rate', 'weight_decay', 'batch_size', 'use_amp'):
         setattr(model_config, field, config['training'][field])
-    model_config.max_game_plies = config['self_play'].get('max_game_plies', 200)
-    model_config.no_capture_limit = config['self_play'].get('no_capture_limit', 100)
+    rules = config.get('rules', config.get('self_play', {}))
+    model_config.max_game_plies = rules.get('max_game_plies', 200)
+    model_config.no_capture_limit = rules.get('no_capture_limit', 100)
     model_config.validate()
     return model_config
 

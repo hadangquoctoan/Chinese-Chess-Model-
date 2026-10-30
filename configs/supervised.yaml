@@ -1,0 +1,28 @@
+# Supervised-only profile: no self-play, replay buffer, or training loop.
+# `rules` pins the state-encoding limits so channel-16 normalization matches
+# Pikafish dataset generation and measurement in scripts/run_supervised.py.
+
+model:
+  size: small
+  num_residual_blocks: 5
+  num_channels: 128
+  policy_channels: 16
+  value_channels: 2
+
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 64
+  use_amp: true
+
+rules:
+  max_game_plies: 160
+  no_capture_limit: 100
+
+optimization:
+  num_workers: 0
+
+paths:
+  checkpoint_dir: models/supervised/checkpoints
+  best_model_path: models/supervised/best_model.pt
+  log_dir: logs/supervised

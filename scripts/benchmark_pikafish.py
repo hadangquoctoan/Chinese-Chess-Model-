@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.engine.player import load_pikafish_player
 from src.game.game_state import GameState
-from src.training.sparring_game import SparringWorker
 from src.utils.model_io import load_model_artifact
+from scripts.measure_vs_pikafish import play_measured_game
 
 
 def generate_opening(plies: int, rng: random.Random) -> tuple:
@@ -70,17 +70,13 @@ def main(argv: list[str] | None = None) -> None:
             opening = generate_opening(
                 args.opening_plies, random.Random(args.seed + index // 2))
             model_is_red = index % 2 == 0
-            worker = SparringWorker(
-                model=model, opponent=opponent, opponent_is_red=not model_is_red,
-                mcts_simulations=args.sims, temperature=0.0,
-                temperature_threshold=1000, dirichlet_alpha=0.3,
-                dirichlet_epsilon=0.0, max_game_plies=120,
-                no_capture_limit=100, opening_moves=opening)
-            states, _, red_winner = worker.play_game(verbose=False)
+            red_winner, _, plies = play_measured_game(
+                model, opponent, model_is_red, args.sims,
+                max_game_plies=120, opening_moves=opening)
             winner = red_winner if model_is_red else -red_winner
-            results.append((winner, len(states)))
+            results.append((winner, plies))
             print(f'game {index + 1}: {"W" if winner > 0 else "L" if winner < 0 else "D"} '
-                  f'({len(states)} plies)')
+                  f'({plies} plies)')
     finally:
         opponent.close()
     summary = summarize_results(results)

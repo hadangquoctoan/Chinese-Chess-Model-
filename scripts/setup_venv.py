@@ -81,9 +81,9 @@ def main(argv: list[str] | None = None) -> None:
 
     runner = ".venv\\Scripts\\python.exe" if os.name == "nt" else ".venv/bin/python"
     print("\nVenv ready. Next command:")
-    print(f"  {runner} scripts/run_server_train.py --hours 7.5 --init-model models/best_model.pt")
-    print("If you do not have a model on this server, omit --init-model; "
-          "the runner will create teacher labels and pretrain automatically.")
+    print(f"  {runner} scripts/run_supervised.py --smoke")
+    print("Smoke verifies dataset generation, supervised pretraining and measurement; "
+          "run without --smoke for the full profile.")
 
 
 if __name__ == "__main__":

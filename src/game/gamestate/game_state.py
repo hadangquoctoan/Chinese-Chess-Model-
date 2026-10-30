@@ -6,7 +6,7 @@ from typing import List, Tuple, Optional, Any
 import numpy as np
 
 from ..board import Board
-from ..rules import Rules
+from ..rules import Move, Rules
 from ..pieces import PieceType, create_piece
 from .move_history import MoveHistory
 from .position_tracker import PositionTracker
@@ -83,7 +83,16 @@ class GameState:
             self.board, from_row, from_col, to_row, to_col, self.is_red_turn
         ):
             return False
-        
+        return self.make_move_trusted(from_row, from_col, to_row, to_col)
+
+    def make_move_trusted(
+        self, from_row: int, from_col: int, to_row: int, to_col: int,
+    ) -> bool:
+        """Apply an already validated move during search, retaining all rule data.
+
+        The caller must have checked that this exact position is non-terminal
+        and the move passed Rules.is_move_legal, as search legal moves do.
+        """
         assign_piece_ids(self.board)
         prior_threats = chase_targets(self.board, from_row, from_col)
         # Thực hiện di chuyển
@@ -168,6 +177,24 @@ class GameState:
             self.no_capture_limit
         )
     
+    def get_search_info(self) -> Tuple[List[Move], Optional[float]]:
+        """Return legal moves and a terminal value, or None while in progress.
+
+        Search nodes can cache this snapshot while their state stays fixed.
+        Ordinary mutable game states deliberately keep no persistent cache.
+        """
+        Rules.validate_position(self.board)
+        legal_moves = Rules.get_all_legal_moves(self.board, self.is_red_turn)
+        terminal, winner, _ = GameResult.outcome(
+            self.board, self.is_red_turn, self._move_history,
+            self._position_tracker, self.max_plies, self.no_capture_limit,
+            legal_moves=legal_moves,
+        )
+        if not terminal:
+            return legal_moves, None
+        value = 0.0 if winner is None else (1.0 if winner == self.is_red_turn else -1.0)
+        return [], value
+
     def get_winner(self) -> Optional[bool]:
         """
         Lấy người thắng

@@ -1,10 +1,12 @@
 import numpy as np
+import pytest
 
 from scripts.build_teacher_labels import (
     MAX_TACTICAL_PROBES, _append_probe, _capture_value, load_probe_npz,
-    save_probes_npz,
+    save_probes_npz, save_teacher_npz,
 )
 from src.game.game_state import GameState
+from src.training.teacher_label import build_teacher_label
 
 
 def test_capture_value_detects_high_value_target():
@@ -32,3 +34,52 @@ def test_probe_npz_round_trip(tmp_path):
     assert loaded['moves'].tolist() == [[0, 0, 9, 0]]
     assert loaded['captured'].tolist() == [9.0]
     assert loaded['history_groups'] == [[(3, 0, 4, 0)]]
+
+
+def test_teacher_npz_round_trips_game_ids(tmp_path):
+    from scripts.build_teacher_labels import load_teacher_npz
+
+    game = GameState()
+    policy, value = build_teacher_label(game.board, True, "h2e2", 87)
+    path = tmp_path / "teacher_game_ids.npz"
+    save_teacher_npz(path, [game.to_tensor()], [policy], [value],
+                     depth=2, engine_path=path, game_ids=[17])
+    loaded = load_teacher_npz(path)
+    assert loaded['game_ids'].tolist() == [17]
+
+
+def test_teacher_npz_round_trips_state_limit_metadata(tmp_path):
+    from scripts.build_teacher_labels import load_teacher_npz
+
+    game = GameState()
+    policy, value = build_teacher_label(game.board, True, "h2e2", 87)
+    path = tmp_path / "teacher_limits.npz"
+    save_teacher_npz(path, [game.to_tensor()], [policy], [value],
+                     depth=8, engine_path=path, game_ids=[3],
+                     max_game_plies=24, no_capture_limit=100)
+    loaded = load_teacher_npz(path)
+    assert loaded['max_game_plies'] == 24
+    assert loaded['no_capture_limit'] == 100
+
+
+def test_teacher_npz_omits_state_limit_metadata_by_default(tmp_path):
+    from scripts.build_teacher_labels import load_teacher_npz
+
+    game = GameState()
+    policy, value = build_teacher_label(game.board, True, "h2e2", 87)
+    path = tmp_path / "teacher_legacy.npz"
+    save_teacher_npz(path, [game.to_tensor()], [policy], [value],
+                     depth=2, engine_path=path)
+    loaded = load_teacher_npz(path)
+    assert 'max_game_plies' not in loaded
+    assert 'no_capture_limit' not in loaded
+    assert 'game_ids' not in loaded
+
+
+def test_teacher_npz_rejects_mismatched_game_ids(tmp_path):
+    game = GameState()
+    policy, value = build_teacher_label(game.board, True, "h2e2", 87)
+    path = tmp_path / "bad_game_ids.npz"
+    with pytest.raises(ValueError, match="game_ids"):
+        save_teacher_npz(path, [game.to_tensor()], [policy], [value],
+                         depth=2, engine_path=path, game_ids=[1, 2])

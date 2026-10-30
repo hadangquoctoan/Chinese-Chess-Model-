@@ -1,4 +1,4 @@
-"""Parse UCI info-line scores for the sparring pipeline.
+"""Parse UCI info-line scores for Pikafish labels and measurements.
 
 Plan ref: docs/plan_pikafish_9h.md section 1.2. Single responsibility:
 extract a centipawn score from UCI stdout lines. Does not touch

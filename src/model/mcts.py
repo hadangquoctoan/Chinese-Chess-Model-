@@ -17,12 +17,12 @@ class MCTSNode:
 
     def __init__(
         self,
-        game_state: GameState,
+        game_state: Optional[GameState],
         parent: Optional['MCTSNode'] = None,
         move: Optional[Move] = None,
         prior: float = 0.0,
     ):
-        self.game_state = game_state
+        self._game_state = game_state
         self.parent = parent
         self.move = move
         self.prior = prior
@@ -30,6 +30,33 @@ class MCTSNode:
         self.total_value = 0.0
         self.children: Dict[Move, MCTSNode] = {}
         self.is_expanded = False
+        self._legal_moves: Optional[List[Move]] = None
+        self._terminal_value: Optional[float] = None
+
+    @property
+    def game_state(self) -> GameState:
+        """Materialize this child only when its position is first needed."""
+        if self._game_state is None:
+            if self.parent is None or self.move is None:
+                raise RuntimeError("A lazy MCTS node needs a parent and a move")
+            state = self.parent.game_state.copy()
+            state.make_move_trusted(*self.move)
+            self._game_state = state
+        return self._game_state
+
+    @property
+    def legal_moves(self) -> List[Move]:
+        """Legal moves cached for this node's fixed position."""
+        if self._legal_moves is None:
+            self._legal_moves, self._terminal_value = self.game_state.get_search_info()
+        return self._legal_moves
+
+    @property
+    def terminal_value(self) -> Optional[float]:
+        """Cached side-to-move result; None means the game is in progress."""
+        if self._legal_moves is None:
+            self._legal_moves, self._terminal_value = self.game_state.get_search_info()
+        return self._terminal_value
 
     def Q(self) -> float:
         """Mean value from this node's side-to-move."""
@@ -128,20 +155,24 @@ class MCTS:
         self.temperature = temperature
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
+        self._inference_device: Optional[torch.device] = None
 
     def search(self, game_state: GameState) -> Tuple[Optional[Move], np.ndarray]:
         """Run MCTS and return (best_move, policy_target[1800])."""
-        if game_state.is_terminal():
+        root = MCTSNode(game_state)
+        if root.terminal_value is not None:
             return None, np.zeros(ACTION_SPACE_SIZE, dtype=np.float32)
         was_training = self.model.training
         self.model.eval()
         try:
-            root = MCTSNode(game_state)
-            self._expand_node(root, add_noise=self.dirichlet_epsilon > 0)
-            for _ in range(self.num_simulations):
-                self._simulate(root)
-            return root.select_action(temperature=self.temperature), root.get_policy_target()
+            with torch.inference_mode():
+                self._inference_device = self.model.get_device()
+                self._expand_node(root, add_noise=self.dirichlet_epsilon > 0)
+                for _ in range(self.num_simulations):
+                    self._simulate(root)
+                return root.select_action(temperature=self.temperature), root.get_policy_target()
         finally:
+            self._inference_device = None
             self.model.train(was_training)
 
     def _simulate(self, node: MCTSNode):
@@ -152,16 +183,15 @@ class MCTS:
     def _select_path(self, root: MCTSNode) -> List[MCTSNode]:
         path = [root]
         current = root
-        while current.is_expanded and not current.game_state.is_terminal():
-            if not current.children:
-                break
+        while current.is_expanded and current.children:
             current = current.best_child(self.c_puct)
             path.append(current)
         return path
 
     def _expand_and_evaluate(self, node: MCTSNode) -> float:
-        if node.game_state.is_terminal():
-            return node.game_state.get_game_result()
+        terminal_value = node.terminal_value
+        if terminal_value is not None:
+            return terminal_value
 
         policy, value = self._infer(node)
         if not node.is_expanded:
@@ -170,17 +200,21 @@ class MCTS:
 
     def _infer(self, node: MCTSNode) -> Tuple[np.ndarray, float]:
         """One network forward: legal-move policy over 1800 and side-to-move value."""
+        # Private helpers are also exercised directly outside search.
+        if not torch.is_inference_mode_enabled():
+            with torch.inference_mode():
+                return self._infer(node)
         board_tensor = torch.from_numpy(node.game_state.to_tensor()).unsqueeze(0)
-        board_tensor = board_tensor.to(self.model.get_device())
-        with torch.no_grad():
-            policy_logits, value_tensor = self.model(board_tensor)
-            logits = policy_logits.float().cpu().numpy()[0]
-            value = float(value_tensor.item())
-            if logits.shape != (ACTION_SPACE_SIZE,) or not np.isfinite(logits).all():
-                raise ValueError("Network policy logits must be finite with shape (1800,)")
-            if not math.isfinite(value) or not -1.0 <= value <= 1.0:
-                raise ValueError("Network value must be finite and within [-1, 1]")
-            return logits, value
+        device = self._inference_device
+        board_tensor = board_tensor.to(device if device is not None else self.model.get_device())
+        policy_logits, value_tensor = self.model(board_tensor)
+        logits = policy_logits.float().cpu().numpy()[0]
+        value = float(value_tensor.item())
+        if logits.shape != (ACTION_SPACE_SIZE,) or not np.isfinite(logits).all():
+            raise ValueError("Network policy logits must be finite with shape (1800,)")
+        if not math.isfinite(value) or not -1.0 <= value <= 1.0:
+            raise ValueError("Network value must be finite and within [-1, 1]")
+        return logits, value
 
     def _backup_value(self, path: List[MCTSNode], value: float):
         for node in reversed(path):
@@ -197,7 +231,7 @@ class MCTS:
         if node.is_expanded:
             return
 
-        legal_moves = node.game_state.get_legal_moves()
+        legal_moves = node.legal_moves
         if not legal_moves:
             node.is_expanded = True
             return
@@ -254,11 +288,8 @@ class MCTS:
         move_priors: List[Tuple[Move, float]],
     ):
         for move, prior in move_priors:
-            child_state = parent.game_state.copy()
-            if not child_state.make_move(*move):
-                raise RuntimeError(f"Legal move failed while expanding MCTS: {move}")
             parent.children[move] = MCTSNode(
-                child_state, parent=parent, move=move, prior=prior
+                None, parent=parent, move=move, prior=prior
             )
 
     def get_action_probs(

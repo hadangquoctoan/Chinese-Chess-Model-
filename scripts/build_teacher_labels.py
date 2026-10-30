@@ -1,5 +1,6 @@
 """Generate supervised (policy, value) labels with one Pikafish process."""
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 import random
 import sys
@@ -82,7 +83,17 @@ def generate_positions(engine: PikafishEngine, num_positions: int, depth: int,
 
 
 def save_teacher_npz(path: Path, states, policies, values, *, depth: int,
-                     engine_path: Path) -> None:
+                     engine_path: Path,
+                     game_ids: Sequence[int] | None = None,
+                     max_game_plies: int | None = None,
+                     no_capture_limit: int | None = None) -> None:
+    """Save a teacher-label archive with optional archive metadata.
+
+    ``game_ids``, ``max_game_plies`` and ``no_capture_limit`` are omitted when
+    not supplied so legacy callers keep producing the original archive layout.
+    """
+    if game_ids is not None and len(game_ids) != len(states):
+        raise ValueError("game_ids must match the number of states")
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "format_version": np.int64(1),
@@ -97,6 +108,12 @@ def save_teacher_npz(path: Path, states, policies, values, *, depth: int,
         "policies": np.stack(policies).astype(np.float32),
         "values": np.asarray(values, dtype=np.float32),
     }
+    if game_ids is not None:
+        payload["game_ids"] = np.asarray(game_ids, dtype=np.int64)
+    if max_game_plies is not None:
+        payload["max_game_plies"] = np.int64(max_game_plies)
+    if no_capture_limit is not None:
+        payload["no_capture_limit"] = np.int64(no_capture_limit)
     np.savez_compressed(path, **payload)
 
 
@@ -137,7 +154,7 @@ def load_teacher_npz(path: Path) -> dict:
         payload = {name: archive[name] for name in archive.files}
     for name in ("format_version", "engine_depth", "score_scale",
                  "action_encoding_version", "ruleset_version", "engine_name",
-                 "value_convention"):
+                 "value_convention", "max_game_plies", "no_capture_limit"):
         if name in payload:
             payload[name] = payload[name].item()
     return payload

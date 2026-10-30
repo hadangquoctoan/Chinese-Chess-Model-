@@ -413,6 +413,19 @@ def test_unknown_or_retired_configuration_options_are_rejected(tmp_path):
         validate_session_config(config)
 
 
+def test_shipped_training_configs_are_valid():
+    import yaml
+
+    from scripts.train import build_model_config
+
+    paths = sorted(Path('configs').glob('*.yaml'))
+    assert paths
+    for path in paths:
+        config = yaml.safe_load(path.read_text(encoding='utf-8'))
+        model_config = build_model_config(config)
+        model_config.validate()
+
+
 @pytest.mark.parametrize('section,key,value', [
     ('self_play', 'num_games_per_iteration', 1.5),
     ('training_loop', 'checkpoint_every', 1.5),
@@ -472,60 +485,6 @@ def test_should_stop_halts_at_game_boundary(tmp_path):
     assert run.games_completed == 1
     assert run.phase == 'self_play'
     assert run.iteration == 0
-
-
-def test_sparring_unknown_key_rejected_before_start(tmp_path):
-    config = settings(tmp_path)
-    config['sparring'] = {'enabled': False, 'movetime': 100}
-    with pytest.raises(ValueError, match='Unsupported'):
-        session(config)
-
-
-def test_sparring_enabled_without_engine_rejected_before_start(tmp_path):
-    config = settings(tmp_path)
-    config['sparring'] = {'enabled': True, 'ratio': 0.3, 'depth': 1,
-                          'threads': 1, 'hash_mb': 16, 'engine_path': 'missing.bin'}
-    with pytest.raises(ValueError, match='engine_path'):
-        session(config)
-
-
-def test_iteration_settings_record_sparring_ratio_and_depth(tmp_path):
-    from src.training.pipeline import iteration_settings
-
-    config = settings(tmp_path)
-    config['sparring'] = {'enabled': False, 'ratio': 0.25, 'depth': 2}
-    assert iteration_settings(config)['sparring'] == {'ratio': 0.25, 'depth': 2}
-
-
-def test_sparring_worker_alternates_color_when_selected(tmp_path, monkeypatch):
-    config = settings(tmp_path)
-    binary = tmp_path / 'engine.bin'
-    binary.write_bytes(b'x')
-    config['sparring'] = {'enabled': True, 'ratio': 1.0, 'depth': 1,
-                          'threads': 1, 'hash_mb': 16, 'engine_path': str(binary)}
-    colors = []
-
-    class FakePlayer:
-        depth = 1
-
-        def close(self):
-            return None
-
-    class FakeSparring:
-        def __init__(self, **kwargs):
-            colors.append(kwargs['opponent_is_red'])
-
-        def play_game(self, verbose=False):
-            return ([torch.zeros(19, 10, 9)], [torch.ones(1800) / 1800], 0.)
-
-    monkeypatch.setattr('src.engine.player.load_pikafish_player',
-                        lambda **kwargs: FakePlayer())
-    monkeypatch.setattr('src.training.sparring_game.SparringWorker', FakeSparring)
-    run = session(config)
-    run.start()
-    run.advance()
-    run.advance()
-    assert colors == [False, True]
 
 
 def test_direct_session_default_evaluator_uses_configured_budget(tmp_path):

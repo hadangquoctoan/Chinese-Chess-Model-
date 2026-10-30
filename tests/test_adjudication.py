@@ -73,7 +73,6 @@ def test_pipeline_rejects_negative_adjudication_margin(tmp_path):
         'paths': {'best_model_path': str(tmp_path / 'best.pt'),
                   'checkpoint_dir': str(tmp_path / 'ckpt'),
                   'log_dir': str(tmp_path / 'logs')},
-        'sparring': {'enabled': False, 'ratio': 0., 'depth': 1},
     }
     with pytest.raises(ValueError, match='adjudication_margin'):
         validate_session_config(config)
