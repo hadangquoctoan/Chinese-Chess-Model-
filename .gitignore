@@ -66,6 +66,12 @@ events.out.tfevents.*
 # Claude Code local settings
 .claude/
 
+# Qoder local settings
+.qoder/
+
+# Superpowers SDD workspace
+.superpowers/
+
 # macOS
 .DS_Store
 
@@ -84,7 +90,13 @@ venv.bak/
 
 # Testing
 .pytest_cache/
+.pytest_tmp/
 .tmp_pytest/
+
+# Local scratch directories
+.mcts_baseline_tests/
+.web_model_picker_tmp/
+.web_test_tmp/
 
 # Plans, research, agent rules and documentation
 plans/
