@@ -262,16 +262,6 @@ class MCTS:
         probabilities = weights / weights.sum()
         return list(zip(legal_moves, probabilities.tolist()))
 
-    def _normalize_priors(
-        self,
-        move_priors: List[Tuple[Move, float]],
-    ) -> List[Tuple[Move, float]]:
-        total_prior = sum(prior for _, prior in move_priors)
-        if np.isfinite(total_prior) and total_prior > 0:
-            return [(move, prior / total_prior) for move, prior in move_priors]
-        uniform_prior = 1.0 / len(move_priors)
-        return [(move, uniform_prior) for move, _ in move_priors]
-
     def _add_dirichlet_noise(
         self,
         move_priors: List[Tuple[Move, float]],

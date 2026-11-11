@@ -1,14 +1,14 @@
 """
 Luật chơi cờ tướng và kiểm tra hợp lệ
 """
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from .board import Board
 from .pieces import PieceType
 
 from .action_encoding import (
-    ACTION_DESTINATION_BUCKETS, ACTION_ENCODING_VERSION, ACTION_SPACE_SIZE,
-    BOARD_COLS, BOARD_ROWS, Move, decode_geometry, encode, valid_coordinate,
+    ACTION_ENCODING_VERSION, ACTION_SPACE_SIZE, Move, decode_geometry, encode,
+    valid_coordinate,
 )
 
 RULESET_VERSION = 'xiangqi-training-v2'

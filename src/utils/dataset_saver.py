@@ -104,11 +104,6 @@ class DatasetSaver:
                           [policy for _, policy, _ in game], float(winner)))
         return games
 
-    def save_iteration_data(self, iteration: int, games: List[GameData], replay_buffer: ReplayBuffer) -> None:
-        """Save safe game and replay snapshots for one iteration."""
-        self.save_games(games, f'iter_{iteration:03d}_games.npz')
-        self.save_buffer(replay_buffer, f'iter_{iteration:03d}_buffer.npz')
-
     def export_to_numpy(self, replay_buffer: ReplayBuffer, filename: str = 'dataset.npz') -> str:
         """Export shape-stable arrays, including a zero-position buffer."""
         return self.save_buffer(replay_buffer, filename)

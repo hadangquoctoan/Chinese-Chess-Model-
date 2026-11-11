@@ -59,11 +59,6 @@ class CheckpointManager:
         """Load with PyTorch's restricted tensor/primitive unpickler only."""
         return torch.load(self._filepath(filename), map_location=device, weights_only=True)
 
-    def get_latest(self) -> Optional[Path]:
-        """Return the most recently written .pt or .pth checkpoint."""
-        checkpoints = list(self.checkpoint_dir.glob('*.pt')) + list(self.checkpoint_dir.glob('*.pth'))
-        return max(checkpoints, key=lambda path: path.stat().st_mtime_ns) if checkpoints else None
-
     def get_best(self) -> Optional[Path]:
         """Return the retained best existing checkpoint, including after restart."""
         return next((path for _, path in self.best_checkpoints if path.exists()), None)

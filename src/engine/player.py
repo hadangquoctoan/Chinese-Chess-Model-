@@ -4,8 +4,8 @@ from pathlib import Path
 
 from ..game.game_state import GameState
 from ..game.rules import Move, Rules
-from .coordinates import move_to_uci, parse_uci_move
-from .fen import STARTPOS_FEN, board_to_fen
+from .coordinates import parse_uci_move
+from .fen import board_to_fen
 from .uci import PikafishEngine, find_engine_binary
 
 DEFAULT_DEPTH = 8
@@ -57,12 +57,3 @@ def load_pikafish_player(depth: int = DEFAULT_DEPTH,
     except Exception:
         engine.close()
         raise
-
-
-def history_uci_moves(state: GameState) -> list[str]:
-    """Convert recorded project moves to UCI tokens for a startpos search."""
-    return [move_to_uci(record[:4]) for record in state.move_history]
-
-
-def startpos_fen() -> str:
-    return STARTPOS_FEN

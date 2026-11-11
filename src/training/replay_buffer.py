@@ -154,29 +154,3 @@ class ReplayBuffer:
     def is_empty(self):
         """Kiểm tra buffer có trống không"""
         return len(self.buffer) == 0
-    
-    def is_full(self):
-        """Kiểm tra buffer đã đầy chưa"""
-        return len(self.buffer) >= self.max_size
-    
-    def get_stats(self):
-        """Lấy thống kê về buffer"""
-        if self.is_empty():
-            return {
-                'size': 0,
-                'capacity': self.max_size,
-                'utilization': 0.0
-            }
-        
-        values = [v for _, _, v in self.buffer]
-        
-        return {
-            'size': len(self.buffer),
-            'capacity': self.max_size,
-            'utilization': len(self.buffer) / self.max_size,
-            'value_mean': np.mean(values),
-            'value_std': np.std(values),
-            'wins': sum(1 for v in values if v > 0.5),
-            'losses': sum(1 for v in values if v < -0.5),
-            'draws': sum(1 for v in values if -0.5 <= v <= 0.5)
-        }

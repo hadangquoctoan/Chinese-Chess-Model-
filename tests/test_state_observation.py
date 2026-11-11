@@ -8,7 +8,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.game.game_state import GameState
-from src.game.gamestate.state_encoder import StateEncoder
 from src.game.pieces import PieceType, create_piece
 from src.game.rules import Rules
 

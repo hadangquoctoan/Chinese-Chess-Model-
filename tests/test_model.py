@@ -17,7 +17,6 @@ def test_model_creation():
     if not _torch_available():
         raise SkipTest("PyTorch not installed; model stack not verified")
     
-    import torch
     from src.model.neural_network import ChineseChessNet
     from src.model.model_config import ModelConfig
     

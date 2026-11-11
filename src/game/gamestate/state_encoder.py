@@ -53,19 +53,6 @@ class StateEncoder:
         return board_array
     
     @staticmethod
-    def _encode_turn(is_red_turn: bool) -> float:
-        """
-        Encode lượt chơi hiện tại
-        
-        Args:
-            is_red_turn: True nếu đến lượt đỏ
-            
-        Returns:
-            1.0 nếu đỏ, 0.0 nếu đen
-        """
-        return 1.0 if is_red_turn else 0.0
-    
-    @staticmethod
     def _encode_no_capture_count(move_history: MoveHistory, no_capture_limit: int = NO_CAPTURE_DRAW_PLY_LIMIT) -> float:
         """
         Encode số nước đi kể từ lần ăn quân gần nhất (normalized)
