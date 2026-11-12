@@ -1,9 +1,10 @@
 """Shard naming, durable game-id progress and depth target parsing.
 
 This is the pure domain layer of the Pikafish data farm: it parses
-``--target`` text into depth plans, names shard files, and keeps per-depth
-game-id progress across restarts. It performs no engine work and has no
-dependency on PyTorch or Pikafish.
+``--target`` text into depth plans, names shard files, reads the game ids
+already stored in label archives, and keeps per-depth game-id progress
+across restarts. It performs no engine work and has no dependency on
+PyTorch or Pikafish.
 """
 
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ import os
 from pathlib import Path
 import re
 import tempfile
+
+import numpy as np
 
 GAME_ID_STRIDE: int = 10_000_000
 
@@ -97,6 +100,21 @@ def parse_shard_filename(name: str) -> tuple[int, int, int] | None:
     if match is None:
         return None
     return (int(match['depth']), int(match['start']), int(match['games']))
+
+
+def read_game_ids(path: Path) -> set[int]:
+    """Return the game ids stored in a teacher-label archive at ``path``.
+
+    A missing archive contributes no ids so callers can treat the first
+    merge as reading an empty archive. Raises ``ValueError`` when the
+    archive exists but has no ``game_ids`` array.
+    """
+    if not path.is_file():
+        return set()
+    with np.load(path, allow_pickle=False) as archive:
+        if 'game_ids' not in archive.files:
+            raise ValueError(f'{path} is missing game_ids')
+        return {int(game_id) for game_id in archive['game_ids']}
 
 
 def load_progress(directory: Path, depth: int) -> DepthProgress:
