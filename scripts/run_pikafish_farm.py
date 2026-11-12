@@ -4,12 +4,16 @@ Workers claim shards from a durable ``JobQueue``, launch
 ``scripts/generate_pikafish_shard.py`` in a separate process, and stop
 cleanly on Ctrl+C, an expired ``--hours`` budget, or a STOP file. Completed
 shards are never regenerated: per-depth game-id progress survives restarts.
+``--calibrate`` measures one game per worker per depth in a temporary
+workspace and never writes to ``--out-root``.
 """
 import argparse
+from collections.abc import Callable
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -21,11 +25,12 @@ from scripts.farm_support import (
     FarmStats, print_plan, status_loop, wait_for_farm,
 )
 from src.engine.uci import find_engine_binary
+from src.training.farm_calibration import CalibrationRow, summarize_calibration
 from src.training.job_queue import (
     DEFAULT_GAMES_PER_SHARD, JobQueue, ShardJob,
 )
 from src.training.shard_farm import FarmResult, run_farm
-from src.training.shard_plan import parse_targets
+from src.training.shard_plan import DepthTarget, parse_targets
 
 DEFAULT_OUT_ROOT = Path('data/teacher_labels/farm')
 DEFAULT_LOG_DIR = Path('logs/pikafish_farm')
@@ -37,6 +42,8 @@ DEFAULT_TIMEOUT = 60.0
 DEFAULT_SEED = 0
 DEFAULT_STATUS_SECONDS = 60.0
 STOP_FILENAME = 'STOP'
+CALIBRATION_HEADER = (
+    'depth  median_s/game  mean_positions/game  est_positions/hour')
 
 
 def default_workers(cpu_count: int | None) -> int:
@@ -53,6 +60,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--target', required=True,
                         help='depth:games list, e.g. 3:200,9:inf')
+    parser.add_argument('--calibrate', action='store_true',
+                        help='measure throughput with one game per worker '
+                             'at every --target depth; target game counts '
+                             'are ignored')
     parser.add_argument('--workers', type=int,
                         default=default_workers(os.cpu_count()))
     parser.add_argument('--out-root', type=Path, default=DEFAULT_OUT_ROOT)
@@ -193,8 +204,8 @@ def _wait_uninterrupted(farmer: threading.Thread, stop: threading.Event,
 
 
 def _run_to_completion(
-        queue: JobQueue, options: argparse.Namespace, root: Path,
-        stats: FarmStats, stop: threading.Event,
+        queue: JobQueue, execute: Callable[[ShardJob], bool],
+        options: argparse.Namespace, stop: threading.Event,
         deadline: float | None) -> FarmResult:
     """Run the farm on its own thread while the main thread monitors stops."""
     result: FarmResult | None = None
@@ -204,8 +215,8 @@ def _run_to_completion(
         nonlocal result, failure
         try:
             result = run_farm(
-                queue, lambda job: run_job(job, options, root, stats),
-                workers=options.workers, stop=stop, deadline=deadline)
+                queue, execute, workers=options.workers, stop=stop,
+                deadline=deadline)
         except Exception as error:  # Deliberate: re-raised on main thread.
             failure = error
         finally:
@@ -224,16 +235,78 @@ def _run_to_completion(
     return result
 
 
-def _preflight(options: argparse.Namespace) -> None:
-    """Fail fast on a missing engine and clear stale stop state."""
+def _ensure_engine() -> None:
+    """Fail fast when the bundled Pikafish engine is missing."""
     try:
         find_engine_binary()
     except FileNotFoundError as error:
         raise SystemExit(f'Pikafish engine not found: {error}') from error
+
+
+def _preflight(options: argparse.Namespace) -> None:
+    """Fail fast on a missing engine and clear stale stop state."""
+    _ensure_engine()
     if prepare_stop_file(options.stop_file):
         print(f'removed stale stop file: {options.stop_file}', flush=True)
     options.out_root.mkdir(parents=True, exist_ok=True)
     options.log_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _calibration_options(
+        options: argparse.Namespace, workspace: Path) -> argparse.Namespace:
+    """Return a copy of ``options`` that writes only inside ``workspace``."""
+    calibration = argparse.Namespace(**vars(options))
+    calibration.out_root = workspace / 'out'
+    calibration.log_dir = workspace / 'logs'
+    calibration.stop_file = workspace / 'STOP'
+    calibration.log_dir.mkdir(parents=True, exist_ok=True)
+    return calibration
+
+
+def _summarize_depth(
+        depth: int, options: argparse.Namespace, root: Path,
+) -> CalibrationRow | None:
+    """Play ``workers`` one-game shards at ``depth`` and summarize them."""
+    queue = JobQueue([DepthTarget(depth, options.workers)], options.out_root,
+                     games_per_shard=1)
+    stats = FarmStats()
+    measurements: list[tuple[float, int]] = []
+
+    def run_timed(job: ShardJob) -> bool:
+        started = time.perf_counter()
+        if not run_job(job, options, root, stats):
+            return False
+        measurements.append(
+            (time.perf_counter() - started, _count_positions(job.path)))
+        return True
+
+    result = _run_to_completion(
+        queue, run_timed, options, threading.Event(), deadline=None)
+    if result.aborted or len(measurements) != options.workers:
+        print(f'depth {depth}: calibration failed '
+              f'({result.failed} failed attempt(s))', flush=True)
+        return None
+    return summarize_calibration(
+        depth,
+        [elapsed for elapsed, _ in measurements],
+        [count for _, count in measurements],
+        options.workers,
+    )
+
+
+def _run_calibration(options: argparse.Namespace, root: Path) -> int:
+    """Benchmark every requested depth in a throwaway temporary workspace."""
+    print(CALIBRATION_HEADER, flush=True)
+    with tempfile.TemporaryDirectory(prefix='pikafish_calibration_') as temp:
+        calibration = _calibration_options(options, Path(temp))
+        for target in options.targets:
+            row = _summarize_depth(target.depth, calibration, root)
+            if row is None:
+                return 1
+            print(f'{row.depth:>5}  {row.median_seconds_per_game:>13.1f}  '
+                  f'{row.mean_positions_per_game:>19.1f}  '
+                  f'{row.est_positions_per_hour:>18,.0f}', flush=True)
+    return 0
 
 
 def _latest_log(log_dir: Path) -> Path | None:
@@ -257,9 +330,12 @@ def _report_result(result: FarmResult,
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the shard farm and return a process exit code."""
+    """Run the shard farm or a calibration run and return an exit code."""
     options = _parse_args(argv)
     root = Path(__file__).resolve().parent.parent
+    if options.calibrate:
+        _ensure_engine()
+        return _run_calibration(options, root)
     _preflight(options)
     queue = JobQueue(options.targets, options.out_root,
                      games_per_shard=options.games_per_shard)
@@ -274,7 +350,11 @@ def main(argv: list[str] | None = None) -> int:
         args=(stop, options.status_seconds, queue, stats, options.targets,
               started),
         name='farm-status', daemon=True).start()
-    result = _run_to_completion(queue, options, root, stats, stop, deadline)
+
+    def execute(job: ShardJob) -> bool:
+        return run_job(job, options, root, stats)
+
+    result = _run_to_completion(queue, execute, options, stop, deadline)
     return _report_result(result, options)
 
 
