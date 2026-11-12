@@ -2,8 +2,8 @@
 
 Kept separate from the CLI so the entry point stays small: this module owns
 the thread-safe per-depth counters, the plan summary, the periodic status
-lines, and the monitor that turns the ``--hours`` deadline or a STOP file
-into a cooperative stop signal.
+lines, the final result report, and the monitor that turns the ``--hours``
+deadline or a STOP file into a cooperative stop signal.
 """
 
 from pathlib import Path
@@ -11,6 +11,7 @@ import threading
 import time
 
 from src.training.job_queue import JobQueue
+from src.training.shard_farm import FarmResult
 from src.training.shard_plan import DepthTarget
 
 STOP_POLL_SECONDS: float = 2.0
@@ -103,3 +104,22 @@ def wait_for_farm(farmer: threading.Thread, stop: threading.Event,
 def _target_games(target: DepthTarget) -> str:
     """Render a target's game budget for status lines."""
     return 'inf' if target.games is None else str(target.games)
+
+
+def latest_worker_log(log_dir: Path) -> Path | None:
+    """Return the most recently modified worker log, if any."""
+    logs = sorted(log_dir.glob('*.log'), key=lambda path: path.stat().st_mtime)
+    return logs[-1] if logs else None
+
+
+def report_result(result: FarmResult, log_dir: Path) -> int:
+    """Print the farm outcome and map it to a process exit code."""
+    if not result.aborted:
+        print(f'farm finished: {result.completed} shard(s) written, '
+              f'{result.failed} failed attempt(s)', flush=True)
+        return 0
+    latest = latest_worker_log(log_dir)
+    location = f'check log: {latest}' if latest else 'no worker log found'
+    print(f'farm aborted after {result.failed} failed attempt(s); '
+          f'{location}', flush=True)
+    return 1
