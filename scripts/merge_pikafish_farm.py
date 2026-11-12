@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.run_pikafish_dataset_loop import merge_shards
+from scripts.run_pikafish_farm import DEFAULT_OUT_ROOT
 from src.engine.uci import find_engine_binary
 from src.training.shard_plan import (
     depth_dir, parse_shard_filename, read_game_ids,
@@ -29,7 +30,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description='Merge one depth of Pikafish farm shards into a dataset',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--out-root', type=Path, required=True,
+    parser.add_argument('--out-root', type=Path, default=DEFAULT_OUT_ROOT,
                         help='farm output root holding depth<d>/ shard dirs')
     parser.add_argument('--depth', type=int, required=True)
     parser.add_argument('--output', type=Path, default=None,

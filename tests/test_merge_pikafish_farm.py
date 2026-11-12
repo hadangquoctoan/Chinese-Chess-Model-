@@ -10,6 +10,8 @@ from scripts.build_teacher_labels import save_teacher_npz
 from src.game.game_state import NO_CAPTURE_DRAW_PLY_LIMIT
 from src.training.shard_plan import depth_dir, shard_filename
 
+FARM_OUT_ROOT = Path('data') / 'teacher_labels' / 'farm'
+
 
 def _write_shard(path: Path, game_ids: list[int], depth: int = 3,
                  max_game_plies: int = 160) -> None:
@@ -35,6 +37,33 @@ def _stub_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep tests independent of the platform-specific Pikafish binary."""
     monkeypatch.setattr(merge_farm, 'find_engine_binary',
                         lambda: Path('pikafish'))
+
+
+def test_parse_args_defaults_out_root_to_farm() -> None:
+    """Only --depth is required; --out-root defaults to the farm root."""
+    args = merge_farm._parse_args(['--depth', '7'])
+
+    assert merge_farm.DEFAULT_OUT_ROOT == FARM_OUT_ROOT
+    assert args.out_root == FARM_OUT_ROOT
+    assert args.output == Path('data') / 'teacher_labels' / 'train_depth7.npz'
+    assert args.max_game_plies == 160
+
+
+def test_main_without_out_root_merges_under_farm_default(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """main(['--depth','7']) finds shards in <farm>/depth7 without a flag."""
+    monkeypatch.chdir(tmp_path)
+    shard_dir = depth_dir(FARM_OUT_ROOT, 7)
+    assert shard_dir.resolve().is_relative_to(tmp_path)
+    _write_shard(shard_dir / shard_filename(7, 30_000_000, 1),
+                 [30_000_000], depth=7)
+    expected = tmp_path / 'data' / 'teacher_labels' / 'train_depth7.npz'
+
+    assert merge_farm.main(['--depth', '7']) == 0
+
+    with np.load(expected, allow_pickle=False) as archive:
+        assert archive['game_ids'].tolist() == [30_000_000]
+        assert int(archive['engine_depth']) == 7
 
 
 def test_merge_two_shards(tmp_path: Path) -> None:
